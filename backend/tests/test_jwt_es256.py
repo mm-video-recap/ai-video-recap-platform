@@ -145,3 +145,21 @@ def test_jwks_url_strips_trailing_auth_v1():
     assert _jwks_url("  https://whlanqcmovbmnhsnnvyt.supabase.co/  ") == (
         "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
     )
+    # The PostgREST URL (.../rest/v1) was the live value on Railway —
+    # it produced .../rest/v1/auth/v1/... and a 401 from the gateway.
+    assert _jwks_url("https://whlanqcmovbmnhsnnvyt.supabase.co/rest/v1") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+    assert _jwks_url("https://whlanqcmovbmnhsnnvyt.supabase.co/rest/v1/auth/v1") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+
+
+def test_settings_normalizes_supabase_url():
+    """Settings must reduce a pasted Supabase API URL to the base URL."""
+    from backend.config import Settings
+
+    s = Settings(SUPABASE_URL="https://whlanqcmovbmnhsnnvyt.supabase.co/rest/v1")
+    assert s.SUPABASE_URL == "https://whlanqcmovbmnhsnnvyt.supabase.co"
+    s2 = Settings(SUPABASE_URL="https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/")
+    assert s2.SUPABASE_URL == "https://whlanqcmovbmnhsnnvyt.supabase.co"

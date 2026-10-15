@@ -13,6 +13,8 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from backend.security.jwt import normalize_supabase_url
+
 
 def _collect_numbered_keys(prefix: str) -> list[str]:
     """Collect KEY_01, KEY_02, ... style env vars plus the bare KEY."""
@@ -146,6 +148,14 @@ class Settings(BaseSettings):
     @classmethod
     def _split_origins(cls, v: str) -> list[str]:
         return [o.strip() for o in v.split(",") if o.strip()]
+
+    @field_validator("SUPABASE_URL")
+    @classmethod
+    def _normalize_supabase_url(cls, v: str) -> str:
+        # Accept a pasted Supabase API URL (.../rest/v1, .../auth/v1, ...)
+        # and reduce it to the bare project URL every consumer expects.
+        # See normalize_supabase_url (live incident 2026-10-16).
+        return normalize_supabase_url(v)
 
     @property
     def gemini_keys(self) -> list[str]:

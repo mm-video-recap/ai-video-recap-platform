@@ -62,20 +62,37 @@ _JWKS_CACHE: dict = {"client": None, "url": None, "fetched_at": 0.0}
 _JWKS_TTL = 3600.0
 
 
-def _jwks_url(supabase_url: str) -> str:
-    """Build the JWKS document URL from the project URL.
+def normalize_supabase_url(url: str) -> str:
+    """Normalize a Supabase project URL to its bare base form.
 
-    Tolerates a SUPABASE_URL that already ends with ``/auth/v1`` (the
-    Auth URL shown on Supabase's Auth settings page) — without this,
-    the JWKS URL becomes ``.../auth/v1/auth/v1/.well-known/jwks.json``,
-    which Supabase's gateway rejects with HTTP 401 (live incident
-    2026-10-16: every token 401'd with "Fail to fetch data from the
-    url, err: HTTP Error 401: Unauthorized").
+    Supabase's dashboard shows several API URLs that all share the
+    project base: ``.../rest/v1`` (PostgREST), ``.../auth/v1`` (Auth),
+    ``.../realtime/v1``, ``.../storage/v1``, ``.../functions/v1``,
+    ``.../graphql/v1``. Pasting any of those into SUPABASE_URL breaks
+    every consumer that appends its own sub-path (the JWKS fetch
+    becomes ``.../rest/v1/auth/v1/.well-known/jwks.json``, which the
+    gateway rejects with HTTP 401 — live incident 2026-10-16: every
+    real token failed verification and the frontend looped
+    login<->dashboard). Strip whitespace, trailing slashes, and any
+    trailing known sub-path, repeatedly.
     """
-    base = supabase_url.strip().rstrip("/")
-    if base.endswith("/auth/v1"):
-        base = base[: -len("/auth/v1")]
-    return base + "/auth/v1/.well-known/jwks.json"
+    base = (url or "").strip().rstrip("/")
+    sub_paths = ("/rest/v1", "/auth/v1", "/realtime/v1",
+                 "/storage/v1", "/functions/v1", "/graphql/v1")
+    changed = True
+    while changed:
+        changed = False
+        for sub in sub_paths:
+            if base.endswith(sub):
+                base = base[: -len(sub)].rstrip("/")
+                changed = True
+                break
+    return base
+
+
+def _jwks_url(supabase_url: str) -> str:
+    """Build the JWKS document URL from the project URL."""
+    return normalize_supabase_url(supabase_url) + "/auth/v1/.well-known/jwks.json"
 
 
 def _get_jwk_client(supabase_url: str):
