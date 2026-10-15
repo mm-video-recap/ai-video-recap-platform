@@ -42,7 +42,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run tests
-        run: pytest -q
+        # Run from the repo root with `python -m pytest` so the repo root is
+        # on sys.path and `backend.*` imports resolve (bare `pytest` from
+        # backend/ fails with ModuleNotFoundError: No module named 'backend').
+        working-directory: .
+        run: python -m pytest backend/tests -q
         env:
           REDIS_URL: redis://localhost:6379/0
           CELERY_BROKER_URL: redis://localhost:6379/0
@@ -119,6 +123,10 @@ jobs:
 
       - name: Validate compose file
         run: |
+          # .env is git-ignored and absent in CI, but docker-compose.yml
+          # declares env_file: .env — create an empty one so `config`
+          # can validate the file without real secrets.
+          touch .env
           if command -v docker >/dev/null 2>&1; then
             docker compose config --quiet && echo "docker compose config OK"
           else
