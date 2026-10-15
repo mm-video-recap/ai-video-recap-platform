@@ -1,0 +1,104 @@
+# ============================================================
+# AI Video Recap Platform — git ignore rules
+# Secrets and build artifacts must NEVER be committed.
+# ============================================================
+
+# ---- Secrets / environment (keep .env.example ONLY) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.next-trace
+*.tsbuildinfo
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+.eggs/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Celery / workers ----
+celerybeat-schedule
+celerybeat.pid
+
+# ---- Storage data (uploads, processing, results, temp — user data, not code) ----
+storage/uploads/*
+storage/processing/*
+storage/results/*
+storage/temporary/*
+storage/thumbnails/*
+storage/reports/*
+!storage/.gitkeep
+# Keep the directory structure itself; ignore contents.
+
+# ---- Misc ----
+.DS_Store
+Thumbs.db
+*.log
+*.sqlite
+*.sqlite3
+.idea/
+.vscode/
+dist/
+build/
+tmp/
+temp/
+*.mp4
+*.mov
+*.webm
+*.mkv
+!frontend/public/demo/*
+
+# ---- Added 2026-10-14 (inspection): gaps found during env/secrets audit ----
+# Re-include the per-subdirectory .gitkeep files (the storage/* patterns above
+# would otherwise swallow them; the old "!storage/.gitkeep" pointed at a file
+# that does not exist).
+!storage/*/.gitkeep
+# Token files (in addition to .env coverage above)
+*.token
+*token*.json
+# Service-role / service-account key files (names, never values)
+*service-role*
+*service-account*.json
+# Extra private-key / certificate containers (beyond *.pem / *.key above)
+*.p12
+*.pfx
+*.ppk
+id_rsa*
+
+# ---- Added 2026-10-15 (STEP 4): hardening rules ----
+# Local npm auth config (may contain registry tokens; never commit).
+# No .npmrc is committed in this repo; if a non-secret registry-only
+# .npmrc is ever needed, add it with `git add -f` after review.
+.npmrc
+# Local docker-compose override (commonly holds real secrets).
+docker-compose.override.yml
+# Certificates (public, but travel with private keys; keep local).
+*.crt
+*.cer
+# Local deployment-platform directories (may contain tokens).
+.vercel/
+.netlify/
+.cloudflare/
+# Backup archives (may contain secrets / user data; never commit).
+*.tar.gz
+*.zip

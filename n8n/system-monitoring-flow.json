@@ -1,0 +1,363 @@
+{
+  "connections": {
+    "Build Alert Payload": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Send Alert",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Check AI Provider Health": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Fetch Recent Errors",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Fetch Recent Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Health": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Check Queue Status",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Fetch Recent Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Queue Status": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Check AI Provider Health",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Fetch Recent Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Detected?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Alert Payload",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Check API Health",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Errors": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Error Detected?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Send Alert": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Create System Log Entry",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Create System Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "name": "System Monitoring Flow",
+  "nodes": [
+    {
+      "id": "1a2b3c4d-monitor-trigger",
+      "name": "Every 5 Minutes",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "position": [
+        240,
+        300
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "2b3c4d5e-check-api",
+      "name": "Check API Health",
+      "parameters": {
+        "method": "GET",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        },
+        "url": "={{ $env.RECAP_API_URL }}/health",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        440,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "3c4d5e6f-check-queue",
+      "name": "Check Queue Status",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RECAP_API_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "sendHeaders": true,
+        "url": "={{ $env.RECAP_API_URL }}/api/admin/overview",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        640,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "4d5e6f7g-check-providers",
+      "name": "Check AI Provider Health",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RECAP_API_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "sendHeaders": true,
+        "url": "={{ $env.RECAP_API_URL }}/api/admin/providers",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        840,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "5e6f7g8h-fetch-errors",
+      "name": "Fetch Recent Errors",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT id, source, message, job_id FROM error_log WHERE created_at > NOW() - INTERVAL '5 minutes' ORDER BY created_at DESC LIMIT 20"
+      },
+      "position": [
+        1040,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      }
+    },
+    {
+      "id": "6f7g8h9i-error-detected",
+      "name": "Error Detected?",
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "cond-api-down",
+              "leftValue": "={{ $('Check API Health').item.json.status }}",
+              "operator": {
+                "operation": "notEquals",
+                "type": "string"
+              },
+              "rightValue": "ok"
+            },
+            {
+              "id": "cond-errors",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "operation": "notEmpty",
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          }
+        }
+      },
+      "position": [
+        1240,
+        300
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "7g8h9i0j-build-alert",
+      "name": "Build Alert Payload",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b-sev",
+              "name": "severity",
+              "type": "string",
+              "value": "={{ ($('Check API Health').first()?.json.status ?? 'unreachable') === 'ok' ? 'warning' : 'critical' }}"
+            },
+            {
+              "id": "b-svc",
+              "name": "service",
+              "type": "string",
+              "value": "system-monitor"
+            },
+            {
+              "id": "b-msg",
+              "name": "alert_message",
+              "type": "string",
+              "value": "=API status: {{ ($('Check API Health').first()?.json.status ?? 'unreachable') }} | Queue depth: {{ ($('Check Queue Status').first()?.json.queue_depth ?? 'unknown') }} | Recent errors: {{ ($json.length ?? 0) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        1440,
+        220
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "8h9i0j1k-send-alert",
+      "name": "Send Alert",
+      "parameters": {
+        "jsonBody": "={{ JSON.stringify({ severity: $json.severity, service: $json.service, message: $json.alert_message, timestamp: new Date().toISOString() }) }}",
+        "method": "POST",
+        "options": {
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "={{ $env.RECAP_ALERT_WEBHOOK_URL }}",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        1640,
+        220
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "9i0j1k2l-create-log",
+      "name": "Create System Log Entry",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO error_log (source, message, detail, created_at) VALUES ('system-monitor', '{{ $json.alert_message }}', 'n8n alert sent to operator webhook', NOW())"
+      },
+      "position": [
+        1840,
+        220
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

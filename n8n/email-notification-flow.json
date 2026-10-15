@@ -1,0 +1,252 @@
+{
+  "connections": {
+    "Fetch Job Details": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Fetch User Email",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Fetch User Email": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prepare Email Content",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Job Completed (Webhook)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Fetch Job Details",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Prepare Email Content": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Send Completion Email (Gmail)",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Send Completion Email (Gmail)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Log Email Record",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Log Email Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "name": "Email Notification Flow",
+  "nodes": [
+    {
+      "id": "1a2b3c4d-job-completed-trigger",
+      "name": "Job Completed (Webhook)",
+      "parameters": {
+        "path": "job-completed",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      },
+      "position": [
+        240,
+        300
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "recap-job-completed"
+    },
+    {
+      "id": "2b3c4d5e-fetch-job",
+      "name": "Fetch Job Details",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RECAP_API_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "sendHeaders": true,
+        "url": "={{ $env.RECAP_API_URL }}/api/jobs/{{ $json.job_id }}"
+      },
+      "position": [
+        440,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "3c4d5e6f-fetch-user",
+      "name": "Fetch User Email",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT email, display_name AS name FROM users WHERE id = '{{ $json.user_id }}'"
+      },
+      "position": [
+        640,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      }
+    },
+    {
+      "id": "4d5e6f7g-prepare-email",
+      "name": "Prepare Email Content",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a-subject",
+              "name": "subject",
+              "type": "string",
+              "value": "Your AI Video Recap Is Ready"
+            },
+            {
+              "id": "a-video-title",
+              "name": "video_title",
+              "type": "string",
+              "value": "={{ $('Fetch Job Details').item.json.video_title }}"
+            },
+            {
+              "id": "a-summary",
+              "name": "summary",
+              "type": "string",
+              "value": "={{ $('Fetch Job Details').item.json.summary }}"
+            },
+            {
+              "id": "a-download-url",
+              "name": "download_url",
+              "type": "string",
+              "value": "={{ $('Fetch Job Details').item.json.result_url }}"
+            },
+            {
+              "id": "a-duration",
+              "name": "processing_minutes",
+              "type": "string",
+              "value": "={{ $('Fetch Job Details').item.json.processing_minutes }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        840,
+        300
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "5e6f7g8h-send-email",
+      "name": "Send Completion Email (Gmail)",
+      "parameters": {
+        "emailType": "html",
+        "message": "<h2>Your AI Video Recap Is Ready</h2><p><strong>Video:</strong> {{ $json.video_title }}</p><p><strong>Summary:</strong></p><p>{{ $json.summary }}</p><p><a href=\"{{ $json.download_url }}\">Download your recap video</a></p><p><small>Processed in {{ $json.processing_minutes }} minutes. Free forever \u2014 no subscription needed.</small></p>",
+        "operation": "send",
+        "options": {},
+        "resource": "message",
+        "subject": "={{ $json.subject }}",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        1040,
+        300
+      ],
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail OAuth2 (create in n8n > Credentials)"
+        }
+      }
+    },
+    {
+      "id": "6f7g8h9i-log-email",
+      "name": "Log Email Record",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO email_records (user_id, job_id, to_email, subject, provider, sent, created_at) VALUES ('{{ $('Fetch Job Details').item.json.user_id }}', '{{ $('Fetch Job Details').item.json.id }}', '{{ $('Fetch User Email').item.json.email }}', 'Your AI Video Recap Is Ready', 'gmail', true, NOW())"
+      },
+      "position": [
+        1240,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      }
+    },
+    {
+      "id": "71dad54b-3db5-404c-b62e-c7a33ee3fd2e",
+      "name": "Log Email Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1240,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO email_records (user_id, job_id, to_email, subject, provider, sent, error, created_at) VALUES ('{{ $('Fetch Job Details').item.json.user_id }}', '{{ $('Fetch Job Details').item.json.id }}', '{{ $('Fetch User Email').item.json.email }}', '{{ $json.subject }}', 'gmail', false, '{{ $json.error }}', NOW())"
+      },
+      "notes": "Error branch: records a FAILED email so retries/audits can find it."
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

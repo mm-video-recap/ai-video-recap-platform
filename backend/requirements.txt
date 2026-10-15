@@ -1,0 +1,33 @@
+# AI Video Recap Platform — backend dependencies (pinned)
+# Install: backend/venv/bin/python -m pip install -r backend/requirements.txt
+#
+# Heavy ML deps (faster-whisper, opencv-python) are INTENTIONALLY absent:
+# agents import them optionally and fall back to cloud providers.
+
+# Web API
+fastapi==0.119.1
+uvicorn[standard]==0.35.0
+python-multipart==0.0.32
+slowapi==0.1.10
+
+# Data / config
+pydantic==2.14.1
+pydantic-settings==2.16.0
+SQLAlchemy==2.0.54
+psycopg[binary]==3.2.13        # Supabase PostgreSQL driver (sqlite used for dev/tests)
+
+# Auth
+PyJWT==2.15.1
+
+# Background pipeline
+celery==5.5.3
+redis==5.3.1
+
+# HTTP (AI providers, storage, email) — no heavy vendor SDKs required
+httpx==0.28.1
+
+# Cloud storage (optional backends; imported lazily)
+boto3==1.43.113
+
+# Tests
+pytest==9.1.1

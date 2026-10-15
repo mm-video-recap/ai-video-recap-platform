@@ -1,0 +1,341 @@
+{
+  "connections": {
+    "Fetch Job Details": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Log Processing Started",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Log Pipeline Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch New Uploads": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Has New Video?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Has New Video?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Fetch Job Details",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Job Completed?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Trigger Email Notification Flow",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Log Incomplete Job",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Log Processing Started": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Monitor Job Status",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Log Pipeline Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitor Job Status": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Job Completed?",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "node": "Log Pipeline Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Video Uploaded (Poll)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Fetch New Uploads",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "name": "Video Processing Flow",
+  "nodes": [
+    {
+      "id": "1a2b3c4d-new-video-trigger",
+      "name": "New Video Uploaded (Poll)",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "position": [
+        240,
+        300
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "2b3c4d5e-fetch-uploads",
+      "name": "Fetch New Uploads",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT v.id, v.user_id, v.original_name, j.id AS job_id FROM videos v JOIN jobs j ON j.video_id = v.id WHERE j.status = 'queued' ORDER BY v.created_at ASC LIMIT 10"
+      },
+      "position": [
+        440,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Supabase Postgres (create in n8n > Credentials)"
+        }
+      }
+    },
+    {
+      "id": "3c4d5e6f-has-video",
+      "name": "Has New Video?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-not-empty",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "operation": "notEmpty",
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          }
+        }
+      },
+      "position": [
+        640,
+        300
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "4d5e6f7g-create-job",
+      "name": "Fetch Job Details",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RECAP_API_SERVICE_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({ video_id: $json.id, user_id: $json.user_id, queue: 'video_upload_queue', priority: 'normal' }) }}",
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "={{ $env.RECAP_API_URL }}/api/jobs/{{ $('Fetch New Uploads').item.json.job_id }}",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        840,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "5e6f7g8h-mark-queued",
+      "name": "Log Processing Started",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO analytics_events (user_id, event, payload, created_at) VALUES ('{{ $('Fetch New Uploads').item.json.user_id }}', 'video_processing_started', '{\"job_id\": \"{{ $('Fetch New Uploads').item.json.job_id }}\"}', NOW())"
+      },
+      "position": [
+        1040,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4
+    },
+    {
+      "id": "6f7g8h9i-poll-status",
+      "name": "Monitor Job Status",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RECAP_API_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "url": "={{ $env.RECAP_API_URL }}/api/jobs/{{ $json.job_id }}",
+        "onError": "continueErrorOutput"
+      },
+      "position": [
+        1240,
+        300
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "7g8h9i0j-is-completed",
+      "name": "Job Completed?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-completed",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "completed"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          }
+        }
+      },
+      "position": [
+        1440,
+        300
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "8h9i0j1k-notify-user",
+      "name": "Trigger Email Notification Flow",
+      "parameters": {
+        "mode": "each",
+        "workflowId": "email-notification-flow"
+      },
+      "position": [
+        1640,
+        220
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "9i0j1k2l-log-not-completed",
+      "name": "Log Incomplete Job",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO error_log (source, message, job_id, created_at) VALUES ('n8n-video-flow', '{{ $json.error ?? $json.message ?? \"video pipeline failed\" }}', '{{ $json.job_id }}', NOW())"
+      },
+      "position": [
+        1640,
+        380
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4
+    },
+    {
+      "id": "79426e0e-0404-491e-9f97-865fdcdde107",
+      "name": "Log Pipeline Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1640,
+        520
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO error_log (source, message, job_id, created_at) VALUES ('n8n-video-flow', '{{ $json.error ?? $json.message ?? \"video pipeline failed\" }}', '{{ $json.job_id }}', NOW())"
+      },
+      "notes": "Error sink: receives the error output of the pipeline HTTP nodes."
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

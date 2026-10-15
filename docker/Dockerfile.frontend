@@ -1,0 +1,36 @@
+# ============================================================
+# Frontend container — Next.js 14 (production build)
+# Assumes: ~/workspace/AI-VIDEO-RECAP-PLATFORM/frontend/
+#   (npm ci, npm run build, npm start, port 3000)
+# ============================================================
+FROM node:20-alpine AS deps
+WORKDIR /app
+# package-lock.json is committed, so npm ci gives reproducible builds.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ ./
+# Next.js public runtime config is injected at build time via NEXT_PUBLIC_* env
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL} \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+# Run as non-root for basic container hardening
+RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+USER nextjs
+EXPOSE 3000
+CMD ["npm", "start"]

@@ -1,0 +1,32 @@
+# ============================================================
+# Backend API container — FastAPI (uvicorn)
+# Assumes: ~/workspace/AI-VIDEO-RECAP-PLATFORM/backend/
+#   with backend/requirements.txt and uvicorn backend.main:app, port 8000
+# ============================================================
+FROM python:3.12-slim AS base
+
+# System deps: FFmpeg (video processing), OpenCV runtime libs,
+# PostgreSQL client lib for psycopg, curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        libpq5 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY backend/requirements.txt ./backend-requirements.txt
+RUN pip install --no-cache-dir -r backend-requirements.txt
+
+COPY backend/ ./backend/
+
+# All secrets come from environment variables at runtime — never baked in
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

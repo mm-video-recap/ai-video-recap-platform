@@ -1,0 +1,149 @@
+# ============================================================
+# AI Video Recap Platform — local / self-hosted stack
+# Services (5, per spec):
+#   1. frontend  — Next.js 14 production build (port 3000)
+#   2. backend   — FastAPI API (uvicorn, port 8000)
+#   3. redis     — job queue / cache / worker communication
+#   4. celery    — background AI processing workers
+# DB is EXTERNAL per spec: Supabase free PostgreSQL (DATABASE_URL).
+# Cloud production deployments (Cloudflare Pages, HF Spaces, Render)
+# are documented in docs/DEPLOYMENT_GUIDE.md — NOT done from here.
+# ============================================================
+# Compose v2: no `version:` key (obsolete — Compose v2 warns on it).
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: recap-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - recap-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: recap-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # The backend enqueues jobs via CELERY_BROKER_URL (config.py) — NOT
+      # REDIS_URL. Without these, the backend defaults to localhost:6379
+      # inside its own container, broker_reachable() fails, and every
+      # upload stays queued forever.
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./storage/uploads:/app/storage/uploads
+      - ./storage/processing:/app/storage/processing
+      - ./storage/results:/app/storage/results
+      - ./storage/temporary:/app/storage/temporary
+      - ./storage/thumbnails:/app/storage/thumbnails
+      - ./storage/reports:/app/storage/reports
+    networks:
+      - recap-net
+
+  celery:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: recap-celery
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # Explicit broker/result URLs: the celery Dockerfile must NOT bake
+      # empty CELERY_BROKER_URL/CELERY_RESULT_BACKEND (see Dockerfile.celery).
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./storage/uploads:/app/storage/uploads
+      - ./storage/processing:/app/storage/processing
+      - ./storage/results:/app/storage/results
+      - ./storage/temporary:/app/storage/temporary
+      - ./storage/thumbnails:/app/storage/thumbnails
+      - ./storage/reports:/app/storage/reports
+    networks:
+      - recap-net
+
+  beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    container_name: recap-beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    # Runs ONLY the scheduler: provider health checks (5 min) + daily cleanup.
+    # Without this service, beat_schedule in backend/celery_app/__init__.py
+    # never fires in the compose stack.
+    command: ["celery", "-A", "backend.celery_app.celery", "beat",
+              "--loglevel=info"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./storage/uploads:/app/storage/uploads
+      - ./storage/processing:/app/storage/processing
+      - ./storage/results:/app/storage/results
+      - ./storage/temporary:/app/storage/temporary
+      - ./storage/thumbnails:/app/storage/thumbnails
+      - ./storage/reports:/app/storage/reports
+    networks:
+      - recap-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    container_name: recap-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - recap-net
+
+volumes:
+  redis_data:
+
+networks:
+  recap-net:
+    driver: bridge

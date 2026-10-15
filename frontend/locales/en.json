@@ -1,0 +1,546 @@
+{
+  "admin": {
+    "accessDenied": "You don't have admin access.",
+    "analyticsTitle": "Platform analytics",
+    "cards": {
+      "activeJobs": "Active jobs",
+      "errors": "Errors (24h)",
+      "providerHealth": "Provider health",
+      "queueDepth": "Queue depth",
+      "storage": "Storage provider",
+      "users": "Total users"
+    },
+    "degraded": "Degraded",
+    "down": "Down",
+    "errorLog": "Error log",
+    "errorTable": {
+      "job": "Job",
+      "message": "Message",
+      "time": "Time"
+    },
+    "feedbackTable": {
+      "comment": "Comment",
+      "date": "Date",
+      "job": "Job",
+      "rating": "Rating"
+    },
+    "filterAll": "All",
+    "healthy": "Healthy",
+    "jobsByStatus": "Jobs by status",
+    "jobsTable": {
+      "created": "Created",
+      "id": "Job ID",
+      "progress": "Progress",
+      "stage": "Stage",
+      "status": "Status",
+      "title": "Video",
+      "user": "User",
+      "video": "Video",
+      "error": "Error"
+    },
+    "noData": "No data available yet.",
+    "providersTable": {
+      "lastCheck": "Last check",
+      "latency": "Latency",
+      "name": "Provider",
+      "status": "Status",
+      "errorRate": "Error rate",
+      "lastError": "Last error"
+    },
+    "signups": "Signups (last 7 days)",
+    "subtitle": "Platform health, jobs, providers and feedback.",
+    "tabAnalytics": "Analytics",
+    "tabFeedback": "Feedback",
+    "tabJobs": "Jobs",
+    "tabOverview": "Overview",
+    "tabProviders": "Providers",
+    "title": "Admin dashboard",
+    "tabErrors": "Errors",
+    "unconfigured": "Not configured",
+    "errorsTable": {
+      "time": "Time",
+      "source": "Source",
+      "message": "Message",
+      "job": "Job"
+    },
+    "analytics": {
+      "dailyUsers": "Daily active users",
+      "dailyUsersHint": "Active users in the last 24 hours",
+      "processingVolume": "Processing volume",
+      "processingVolumeHint": "Total video minutes in the last 7 days",
+      "minutes": "min",
+      "aiUsage": "AI usage by provider",
+      "errors24h": "Errors (24h)"
+    }
+  },
+  "auth": {
+    "checkEmail": "Check your email to confirm your account, then log in.",
+    "createAccount": "Create account",
+    "creating": "Creating…",
+    "email": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "errorGeneric": "Something went wrong. Please try again.",
+    "errorInvalid": "Invalid email or password. Please try again.",
+    "google": "Continue with Google",
+    "haveAccount": "Already have an account?",
+    "loginLink": "Log in",
+    "loginSubtitle": "Log in to create and manage your AI video recaps.",
+    "loginTitle": "Welcome back",
+    "name": "Display name",
+    "namePlaceholder": "Your name",
+    "noAccount": "Don't have an account?",
+    "or": "or",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "signIn": "Log in",
+    "signUpLink": "Sign up free",
+    "signUpSubtitle": "Start turning videos into smart recaps in under a minute.",
+    "signUpTitle": "Create your free account",
+    "signingIn": "Logging in…"
+  },
+  "common": {
+    "actions": "Actions",
+    "back": "Back",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "copied": "Copied to clipboard!",
+    "copy": "Copy",
+    "delete": "Delete",
+    "download": "Download",
+    "getStarted": "Get started",
+    "learnMore": "Learn more",
+    "loading": "Loading…",
+    "optional": "Optional",
+    "retry": "Retry",
+    "save": "Save",
+    "seeDetails": "See details",
+    "signOut": "Sign out",
+    "submit": "Submit",
+    "viewAll": "View all"
+  },
+  "community": {
+    "cta": "Contact us",
+    "desc": "This is a community-driven free platform. Report bugs, suggest features, and help shape the roadmap.",
+    "heading": "Built in the open, for everyone"
+  },
+  "contact": {
+    "bugTitle": "Report a bug",
+    "featureTitle": "Request a feature",
+    "jobId": "Related job ID",
+    "message": "Message",
+    "messagePlaceholder": "Describe what happened, steps to reproduce, and what you expected…",
+    "securityDesc": "Found a security issue? Please report it responsibly.",
+    "securityEmail": "security@example.com",
+    "securityTitle": "Security contact",
+    "send": "Send",
+    "sending": "Sending…",
+    "sent": "Thanks! Your report has been received.",
+    "subject": "Subject",
+    "subjectPlaceholder": "Brief summary of the issue",
+    "subtitle": "Report a bug, request a feature, or reach the team.",
+    "supportTitle": "Support request",
+    "title": "Contact & support",
+    "titleField": "Title",
+    "titlePlaceholder": "A short, clear title for your idea"
+  },
+  "ctaSection": {
+    "button": "Create Free Recap",
+    "desc": "Join thousands of people turning long videos into smart summaries — free forever.",
+    "heading": "Ready to recap your first video?"
+  },
+  "dashboard": {
+    "downloadHistory": "Download history",
+    "emptyHistoryDesc": "Videos and subtitles you download will be listed here.",
+    "emptyHistoryTitle": "No downloads yet",
+    "emptySummariesDesc": "Completed recaps will appear here with their AI summaries.",
+    "emptySummariesTitle": "No summaries yet",
+    "emptyVideosCta": "Upload your first video",
+    "emptyVideosDesc": "Upload your first video and let AI turn it into a smart recap.",
+    "emptyVideosTitle": "No videos yet",
+    "greeting": "Hello",
+    "recentSummaries": "Recent summaries",
+    "recentVideos": "Recent videos",
+    "stats": {
+      "completed": "Completed",
+      "processing": "Processing",
+      "storage": "Storage used",
+      "total": "Total videos"
+    },
+    "status": {
+      "completed": "Completed",
+      "failed": "Failed",
+      "processing": "Processing",
+      "queued": "Queued"
+    },
+    "subtitle": "Here's what's happening with your video recaps.",
+    "uploadCta": "Upload video",
+    "viewAll": "View all",
+    "welcomeBack": "Welcome back"
+  },
+  "demo": {
+    "heading": "See it in action",
+    "note": "Demo video coming soon — create your own free recap to try it now.",
+    "subheading": "Watch how a 20-minute video becomes a 2-minute smart recap."
+  },
+  "dmca": {
+    "desc": "If you believe content on this platform infringes your copyright, you may submit a takedown notice below.",
+    "formTitle": "Copyright complaint",
+    "statement": "Statement",
+    "statementText": "I have a good-faith belief that the use of the material described above is not authorized by the copyright owner, and this notification is accurate.",
+    "submit": "Submit complaint",
+    "submitted": "Your complaint has been received. We review DMCA notices within 2 business days.",
+    "workTitle": "Title of the copyrighted work",
+    "workUrl": "URL of the infringing content",
+    "yourEmail": "Your email address",
+    "yourName": "Your full name"
+  },
+  "empty": {
+    "resultsCta": "Create a recap",
+    "resultsDesc": "Completed recaps will show up here.",
+    "resultsTitle": "No results yet",
+    "videosCta": "Upload video",
+    "videosDesc": "Upload your first video to get started.",
+    "videosTitle": "No videos yet"
+  },
+  "errors": {
+    "generic": "Something went wrong.",
+    "loadFailed": "Failed to load data. Please try again.",
+    "networkError": "Network error. Check your connection and retry.",
+    "notFound": "Not found.",
+    "tryAgain": "Please try again.",
+    "unauthorized": "Please log in to continue."
+  },
+  "faq": {
+    "heading": "Frequently asked questions",
+    "items": [
+      {
+        "a": "Yes. There is no paid plan, no credit card requirement, and no hidden limits on the core recap features.",
+        "q": "Is it really 100% free?"
+      },
+      {
+        "a": "MP4, MOV, WebM and MKV files are supported. For best results use MP4 with H.264 video.",
+        "q": "Which video formats are supported?"
+      },
+      {
+        "a": "Most videos finish in a few minutes. Longer videos take proportionally longer — you can leave the page and we'll keep working in the background.",
+        "q": "How long does processing take?"
+      },
+      {
+        "a": "Summaries and subtitles are available in Burmese (မြန်မာ) and English. Speech recognition works best with clear audio.",
+        "q": "Which languages are supported?"
+      },
+      {
+        "a": "A free account is required to upload videos and keep your library. Signing up takes less than a minute with email or Google.",
+        "q": "Do I need an account?"
+      },
+      {
+        "a": "Your videos are processed securely and stored in your private library. You can delete any video at any time, which removes it permanently.",
+        "q": "What happens to my videos?"
+      }
+    ],
+    "subheading": "Everything you need to know about the platform."
+  },
+  "features": {
+    "heading": "Everything you need for perfect recaps",
+    "items": [
+      {
+        "desc": "Short and detailed summaries in Burmese or English, written by state-of-the-art language models.",
+        "title": "AI Summaries"
+      },
+      {
+        "desc": "Accurate subtitles generated from speech recognition — downloadable as .srt files.",
+        "title": "Smart Subtitles"
+      },
+      {
+        "desc": "The AI finds the most important moments and marks them on your timeline.",
+        "title": "Highlight Moments"
+      },
+      {
+        "desc": "Jump straight to any section with automatically generated video chapters.",
+        "title": "Timeline Chapters"
+      },
+      {
+        "desc": "A searchable transcript of everything said in the video.",
+        "title": "Full Transcript"
+      },
+      {
+        "desc": "No credit card, no subscription, no hidden limits. Free for everyone, forever.",
+        "title": "100% Free"
+      }
+    ],
+    "subheading": "A complete AI pipeline that turns long videos into short, useful summaries."
+  },
+  "footer": {
+    "legal": "Legal",
+    "links": {
+      "admin": "Admin",
+      "contact": "Contact",
+      "contentPolicy": "Content Policy",
+      "dashboard": "Dashboard",
+      "dmca": "DMCA",
+      "help": "Help",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service",
+      "upload": "Upload video"
+    },
+    "product": "Product",
+    "resources": "Resources",
+    "rights": "All rights reserved.",
+    "tagline": "Free AI video recaps for everyone."
+  },
+  "hero": {
+    "badge": "100% Free · No credit card required",
+    "primaryCta": "Create Free Recap",
+    "secondaryCta": "Watch Demo",
+    "stats": [
+      {
+        "label": "Videos recapped",
+        "value": "12k+"
+      },
+      {
+        "label": "Languages supported",
+        "value": "2"
+      },
+      {
+        "label": "Free forever",
+        "value": "100%"
+      }
+    ],
+    "subtitle": "Upload any video and our free AI pipeline transcribes, analyzes and summarizes it — with subtitles, highlight moments and timeline chapters, in minutes.",
+    "titleA": "Turn Any Video Into an",
+    "titleB": "AI-Powered Recap"
+  },
+  "howItWorks": {
+    "heading": "From video to recap in 4 steps",
+    "steps": [
+      {
+        "desc": "Drag & drop any MP4, MOV, WebM or MKV file. Fast, resumable uploads.",
+        "title": "Upload your video"
+      },
+      {
+        "desc": "Audio is extracted, speech is transcribed, and AI models analyze the content.",
+        "title": "AI processes it"
+      },
+      {
+        "desc": "Read the summary, browse chapters and highlights, and jump to key moments.",
+        "title": "Review your recap"
+      },
+      {
+        "desc": "Export the recap video and subtitles, or share a link with anyone.",
+        "title": "Download & share"
+      }
+    ],
+    "subheading": "No editing skills needed — the AI does the heavy lifting."
+  },
+  "legal": {
+    "contentPolicyTitle": "Content Policy",
+    "dmcaTitle": "DMCA & Copyright",
+    "lastUpdated": "Last updated: October 2026",
+    "privacyIntro": "This policy explains what data we collect, how we handle your videos, and how AI processing works on this free platform.",
+    "privacyTitle": "Privacy Policy",
+    "sections": {
+      "aiProcessing": "AI processing",
+      "collection": "Data we collect",
+      "deletion": "Deleting your data",
+      "email": "Email use",
+      "retention": "Data retention",
+      "videoHandling": "How we handle your videos"
+    },
+    "termsTitle": "Terms of Service"
+  },
+  "meta": {
+    "appName": "AI Video Recap",
+    "tagline": "Turn Any Video Into an AI-Powered Recap"
+  },
+  "nav": {
+    "community": "Community",
+    "dashboard": "Dashboard",
+    "faq": "FAQ",
+    "features": "Features",
+    "getStarted": "Create Free Recap",
+    "home": "Home",
+    "howItWorks": "How it works",
+    "login": "Log in",
+    "logout": "Log out",
+    "technology": "Technology"
+  },
+  "pipelineAnim": {
+    "ai": "AI pipeline",
+    "recap": "Smart recap",
+    "upload": "Your video"
+  },
+  "player": {
+    "exitFullscreen": "Exit fullscreen",
+    "fullscreen": "Fullscreen",
+    "mute": "Mute",
+    "pause": "Pause",
+    "play": "Play",
+    "playbackRate": "Playback speed",
+    "seekBack": "Back 10 seconds",
+    "seekForward": "Forward 10 seconds",
+    "subtitles": "Subtitles",
+    "unmute": "Unmute"
+  },
+  "processing": {
+    "backToDashboard": "Back to dashboard",
+    "elapsed": "Elapsed",
+    "failedDesc": "Something went wrong while processing your video. Your original file is safe.",
+    "failedTitle": "Processing failed",
+    "liveLog": "Live status",
+    "overallProgress": "Overall progress",
+    "redirecting": "Recap complete! Taking you to the result…",
+    "retryHint": "Try uploading again — transient errors usually succeed on retry. If it keeps failing, contact support.",
+    "statusActive": "In progress",
+    "statusDone": "Done",
+    "statusPending": "Waiting",
+    "stepDescs": {
+      "analysis": "Understanding the content",
+      "audio": "Extracting the audio track",
+      "completed": "Your recap is ready",
+      "highlights": "Picking key moments",
+      "rendering": "Building the recap video",
+      "speech": "Converting speech to text",
+      "summary": "Writing your summary",
+      "upload": "Receiving your video file"
+    },
+    "steps": {
+      "analysis": "AI Analysis",
+      "audio": "Audio Extraction",
+      "completed": "Completed",
+      "highlights": "Highlight Selection",
+      "rendering": "Rendering",
+      "speech": "Speech Recognition",
+      "summary": "Summary",
+      "upload": "Upload"
+    },
+    "subtitle": "You can leave this page — processing continues in the background.",
+    "title": "AI is working on your video"
+  },
+  "result": {
+    "backToDashboard": "Back to dashboard",
+    "chapters": "Timeline chapters",
+    "detailedSummary": "Detailed summary",
+    "downloadSubtitle": "Download subtitles (.srt)",
+    "downloadVideo": "Download video",
+    "feedbackCommentLabel": "Tell us more",
+    "feedbackExcellent": "Excellent",
+    "feedbackGood": "Good",
+    "feedbackNeedsWork": "Needs improvement",
+    "feedbackPlaceholder": "What could be better? (optional)",
+    "feedbackSubmit": "Send feedback",
+    "feedbackThanks": "Thanks for your feedback!",
+    "feedbackTitle": "How was your AI recap?",
+    "highlights": "Highlights",
+    "jumpTo": "Jump to {time}",
+    "keyPoints": "Key points",
+    "linkCopied": "Result link copied!",
+    "noChapters": "No chapters were generated.",
+    "noHighlights": "No highlights were detected.",
+    "noTranscript": "No transcript available for this video.",
+    "scoreLabel": "AI score",
+    "share": "Share result",
+    "shortSummary": "Short summary",
+    "summaryTitle": "AI Summary",
+    "transcript": "Transcript"
+  },
+  "settings": {
+    "accountDesc": "You are signed in as {email}.",
+    "accountTitle": "Account",
+    "defaultLangLabel": "Default summary language",
+    "languageDesc": "Choose the language for buttons, menus and instructions.",
+    "languageTitle": "Interface language",
+    "prefsDesc": "Defaults used when you upload a new video.",
+    "prefsTitle": "Recap preferences",
+    "saved": "Preferences saved.",
+    "subtitle": "Customize your recap experience.",
+    "summaryStyleLabel": "Default recap style",
+    "title": "Settings"
+  },
+  "sidebar": {
+    "admin": "Admin",
+    "backToSite": "Back to site",
+    "dashboard": "Dashboard",
+    "help": "Help",
+    "myVideos": "My Videos",
+    "results": "Results",
+    "settings": "Settings",
+    "upload": "Upload"
+  },
+  "technology": {
+    "heading": "Built on modern AI",
+    "items": [
+      {
+        "desc": "Whisper-class models turn spoken audio into accurate, timestamped text.",
+        "title": "Speech Recognition"
+      },
+      {
+        "desc": "Gemini and open models write natural summaries and pick key points.",
+        "title": "Large Language Models"
+      },
+      {
+        "desc": "FFmpeg assembles your recap video with burned-in subtitles.",
+        "title": "Smart Rendering"
+      },
+      {
+        "desc": "A Redis + Celery pipeline with priority queues handles many videos at once.",
+        "title": "Scalable Queue"
+      }
+    ],
+    "subheading": "Open, proven components working together in an autonomous pipeline."
+  },
+  "themeToggle": {
+    "dark": "Dark",
+    "light": "Light",
+    "switchToDark": "Switch to dark mode",
+    "switchToLight": "Switch to light mode"
+  },
+  "upload": {
+    "browse": "Browse files",
+    "dropSubtitle": "or click to browse your files",
+    "dropTitle": "Drag & drop your video here",
+    "errors": {
+      "invalidType": "Unsupported file type. Please use MP4, MOV, WebM or MKV.",
+      "noFile": "Please choose a video file first.",
+      "notLoggedIn": "Please log in to upload videos.",
+      "tooLarge": "File is too large. Maximum size is 2 GB.",
+      "uploadFailed": "Upload failed. Please check your connection and try again."
+    },
+    "estimateTitle": "Estimated processing time",
+    "estimatedTime": "About {minutes} min",
+    "estimatedTimeShort": "Under 1 min",
+    "langEn": "English",
+    "langMy": "Burmese (မြန်မာ)",
+    "langNone": "None",
+    "progressLabel": "Upload progress",
+    "recapStyle": "Recap style",
+    "remove": "Remove",
+    "settingsTitle": "Recap settings",
+    "startUpload": "Start AI recap",
+    "styles": {
+      "concise": "Concise",
+      "detailed": "Detailed",
+      "highlights": "Highlights only"
+    },
+    "stylesDesc": {
+      "concise": "A short paragraph covering the essentials.",
+      "detailed": "In-depth summary with key points and chapters.",
+      "highlights": "Just the most important moments."
+    },
+    "subtitle": "Drop a video file and configure your AI recap.",
+    "subtitleLang": "Subtitle language",
+    "success": "Upload complete! Starting AI processing…",
+    "summaryLang": "Summary language",
+    "supported": "MP4 · MOV · WebM · MKV · up to 2 GB",
+    "title": "Upload video",
+    "uploading": "Uploading… {pct}%"
+  },
+  "videos": {
+    "deleteConfirm": "Delete this video? This cannot be undone.",
+    "deleted": "Video deleted.",
+    "open": "Open",
+    "searchPlaceholder": "Search videos…",
+    "subtitle": "All your uploaded videos and their recap status.",
+    "title": "My Videos"
+  }
+}

@@ -1,0 +1,42 @@
+# ============================================================
+# Celery worker container — background AI processing pipeline
+# Uses the same backend code; runs celery workers (beat runs as a
+# separate service).
+# Queues (per spec): video_upload_queue, video_processing_queue,
+#   ai_analysis_queue, render_queue, email_queue
+# Priority routing: normal (free users) / priority (admin) / emergency
+# ============================================================
+FROM python:3.12-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        libpq5 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY backend/requirements.txt ./backend-requirements.txt
+RUN pip install --no-cache-dir -r backend-requirements.txt
+
+COPY backend/ ./backend/
+
+ENV PYTHONUNBUFFERED=1
+
+# All secrets come from environment variables at runtime — never baked in.
+# NOTE: do NOT set CELERY_BROKER_URL / CELERY_RESULT_BACKEND here.
+# A previous version set them from ${REDIS_URL}, which is unset at image
+# build time, baking EMPTY strings into the image. An env var that is
+# present-but-empty overrides config.py defaults, so the worker would
+# try broker="" and fail. Compose / the host must supply the real broker
+# URL at runtime (see docker-compose.yml celery/beat services).
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+    CMD celery -A backend.celery_app.celery inspect ping -d celery@$HOSTNAME 2>/dev/null | grep -q pong || exit 1
+
+# Consume all 5 spec queues. Run beat as a separate service (or add -B)
+# for periodic tasks: provider health checks every 5 min, daily
+# cleanup/backup jobs.
+CMD ["celery", "-A", "backend.celery_app.celery", "worker",
+     "-Q", "video_upload_queue,video_processing_queue,ai_analysis_queue,render_queue,email_queue"]
