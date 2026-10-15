@@ -32,6 +32,14 @@ def _sqlite_url() -> str:
 def get_database_url() -> str:
     url = (get_settings().DATABASE_URL or "").strip()
     if url:
+        # SQLAlchemy maps a bare "postgresql://" / "postgres://" URL to the
+        # psycopg2 dialect, but this project pins psycopg v3
+        # (psycopg[binary]) and has no psycopg2 dependency. Rewrite the
+        # scheme so the v3 driver is used; no new dependency needed.
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        elif url.startswith("postgres://"):
+            url = "postgresql+psycopg://" + url[len("postgres://"):]
         return url
     log.warning("DATABASE_URL not set — using local SQLite dev fallback")
     return _sqlite_url()
