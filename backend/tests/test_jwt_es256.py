@@ -123,3 +123,25 @@ def test_verify_rs256_still_allowed(monkeypatch):
     user = verify_jwt(token, supabase_url="https://example.supabase.co",
                       jwt_secret="")
     assert user.id == "user-456"
+
+
+def test_jwks_url_strips_trailing_auth_v1():
+    """A SUPABASE_URL ending in /auth/v1 must not double the path.
+
+    Live incident 2026-10-16: the doubled JWKS URL was rejected by
+    Supabase's gateway with HTTP 401, so every real token failed.
+    """
+    from backend.security.jwt import _jwks_url
+
+    assert _jwks_url("https://whlanqcmovbmnhsnnvyt.supabase.co") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+    assert _jwks_url("https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+    assert _jwks_url("https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+    assert _jwks_url("  https://whlanqcmovbmnhsnnvyt.supabase.co/  ") == (
+        "https://whlanqcmovbmnhsnnvyt.supabase.co/auth/v1/.well-known/jwks.json"
+    )

@@ -62,9 +62,25 @@ _JWKS_CACHE: dict = {"client": None, "url": None, "fetched_at": 0.0}
 _JWKS_TTL = 3600.0
 
 
+def _jwks_url(supabase_url: str) -> str:
+    """Build the JWKS document URL from the project URL.
+
+    Tolerates a SUPABASE_URL that already ends with ``/auth/v1`` (the
+    Auth URL shown on Supabase's Auth settings page) — without this,
+    the JWKS URL becomes ``.../auth/v1/auth/v1/.well-known/jwks.json``,
+    which Supabase's gateway rejects with HTTP 401 (live incident
+    2026-10-16: every token 401'd with "Fail to fetch data from the
+    url, err: HTTP Error 401: Unauthorized").
+    """
+    base = supabase_url.strip().rstrip("/")
+    if base.endswith("/auth/v1"):
+        base = base[: -len("/auth/v1")]
+    return base + "/auth/v1/.well-known/jwks.json"
+
+
 def _get_jwk_client(supabase_url: str):
     global _JWKS_CACHE
-    jwks_url = supabase_url.rstrip("/") + "/auth/v1/.well-known/jwks.json"
+    jwks_url = _jwks_url(supabase_url)
     cached = _JWKS_CACHE
     if cached["client"] is not None and cached["url"] == jwks_url \
             and time.time() - cached["fetched_at"] < _JWKS_TTL:
@@ -108,7 +124,12 @@ def verify_jwt(token: str, *, supabase_url: str = "", jwt_secret: str = "") -> A
     except _pyjwt.InvalidTokenError as exc:
         raise InvalidTokenError(f"Invalid token: {exc}") from exc
     except Exception as exc:  # network / JWKS fetch failures
-        raise AuthUnavailableError(f"Token verification unavailable: {exc}") from exc
+        # Include the JWKS URL (a public URL, not a secret) — a bare
+        # "fail to fetch" is undiagnosable from Railway logs.
+        jwks_url = _jwks_url(supabase_url) if supabase_url else "(no SUPABASE_URL)"
+        raise AuthUnavailableError(
+            f"Token verification unavailable: {exc} (JWKS URL: {jwks_url})"
+        ) from exc
 
     user_id = claims.get("sub") or ""
     if not user_id:
