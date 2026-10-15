@@ -55,3 +55,20 @@ def test_postgres_url_uses_psycopg_v3_driver(url):
 def test_sqlite_url_untouched():
     engine = _engine_for("sqlite:////tmp/recap_test_scheme.db")
     assert engine.dialect.driver == "pysqlite"
+
+
+def test_sqlite_pragmas_listener_only_on_sqlite():
+    """PRAGMA on a Postgres connection fails and aborts the transaction,
+    so the next real query dies with InFailedSqlTransaction. The listener
+    must only be registered on sqlite engines (live incident 2026-10-16:
+    /ready reported database "error" on every fresh Postgres connection).
+    """
+    from sqlalchemy import event
+
+    from backend.database.session import _sqlite_pragmas
+
+    pg = _engine_for("postgresql://user:pass@db.example.com:5432/postgres")
+    assert not event.contains(pg, "connect", _sqlite_pragmas)
+
+    lite = _engine_for("sqlite:////tmp/recap_test_pragmas.db")
+    assert event.contains(lite, "connect", _sqlite_pragmas)

@@ -45,6 +45,24 @@ def get_database_url() -> str:
     return _sqlite_url()
 
 
+def _sqlite_pragmas(dbapi_conn, _):  # pragma: no cover - sqlite only
+    """Apply SQLite pragmas on each new DBAPI connection (sqlite ONLY).
+
+    MUST only be registered on sqlite engines: issuing PRAGMA against
+    PostgreSQL fails, and the failed statement aborts the transaction, so
+    the next real query on that connection dies with InFailedSqlTransaction.
+    (Live incident 2026-10-16: /ready reported database "error" on every
+    fresh Postgres connection for exactly this reason.)
+    """
+    try:
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.execute("PRAGMA busy_timeout=5000;")
+        cur.close()
+    except Exception:
+        pass
+
+
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
@@ -53,16 +71,8 @@ def get_engine() -> Engine:
         if url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False}
         _engine = create_engine(url, **kwargs)
-
-        @event.listens_for(_engine, "connect")
-        def _sqlite_pragmas(dbapi_conn, _):  # pragma: no cover - sqlite only
-            try:
-                cur = dbapi_conn.cursor()
-                cur.execute("PRAGMA journal_mode=WAL;")
-                cur.execute("PRAGMA busy_timeout=5000;")
-                cur.close()
-            except Exception:
-                pass
+        if url.startswith("sqlite"):
+            event.listen(_engine, "connect", _sqlite_pragmas)
 
     return _engine
 
