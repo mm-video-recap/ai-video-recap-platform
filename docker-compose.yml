@@ -107,7 +107,7 @@ services:
     # Runs ONLY the scheduler: provider health checks (5 min) + daily cleanup.
     # Without this service, beat_schedule in backend/celery_app/__init__.py
     # never fires in the compose stack.
-    command: ["celery", "-A", "backend.celery_app.celery", "beat",
+    command: ["celery", "-A", "backend.celery_app:celery_app", "beat",
               "--loglevel=info"]
     depends_on:
       backend:

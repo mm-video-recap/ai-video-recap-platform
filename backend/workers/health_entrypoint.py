@@ -37,7 +37,7 @@ def build_celery_command() -> list:
     cmd = [
         "celery",
         "-A",
-        "backend.celery_app.celery",
+        "backend.celery_app:celery_app",
         "worker",
         "-Q",
         QUEUES,

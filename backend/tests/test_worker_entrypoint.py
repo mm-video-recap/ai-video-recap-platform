@@ -32,7 +32,7 @@ def _get(port, path):
 def test_command_without_embed_beat(monkeypatch):
     monkeypatch.delenv("EMBED_BEAT", raising=False)
     cmd = health_entrypoint.build_celery_command()
-    assert cmd[:4] == ["celery", "-A", "backend.celery_app.celery", "worker"]
+    assert cmd[:4] == ["celery", "-A", "backend.celery_app:celery_app", "worker"]
     assert "-B" not in cmd
     assert "video_upload_queue" in cmd[cmd.index("-Q") + 1]
 
