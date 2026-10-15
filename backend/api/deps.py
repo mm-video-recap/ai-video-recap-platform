@@ -83,8 +83,13 @@ def get_current_user(
                 jwt_secret=settings.SUPABASE_JWT_SECRET,
             )
         except (InvalidTokenError, AuthUnavailableError) as exc:
+            # Log the REASON (never the token) — a bare 401 is
+            # undiagnosable from Railway logs. Live incident 2026-10-16:
+            # 103x 401 in ~22s with no visible cause.
+            log.warning("JWT verification failed: %s", exc)
             raise HTTPException(status_code=401, detail=str(exc))
         except AuthError as exc:
+            log.warning("JWT verification failed: %s", exc)
             raise HTTPException(status_code=401, detail=str(exc))
 
     # local admin override via ADMIN_EMAILS env
@@ -120,6 +125,7 @@ def verify_query_token(token: str, settings: Settings) -> AuthUser:
         return verify_jwt(token, supabase_url=settings.SUPABASE_URL,
                           jwt_secret=settings.SUPABASE_JWT_SECRET)
     except AuthError as exc:
+        log.warning("JWT verification failed (query token): %s", exc)
         raise HTTPException(status_code=401, detail=str(exc))
 
 
