@@ -42,8 +42,4 @@
 
 ## Reporting a vulnerability
 
-**Do not open a public issue.** Email the security contact below with: affected component, steps to reproduce, and impact. We aim to acknowledge within 72 hours and will coordinate disclosure.
-
-- Security contact: `security@example.com` ← **replace with the real address before launch.**
-
-> NOTE (unverified against implementation): the real security contact address is not yet defined — set it before production.
+**Do not open a public issue, and do not post exploit details publicly.** No private email contact is published yet. Once this repository is public on GitHub, report vulnerabilities via GitHub **private vulnerability reporting** (to be enabled when the repo is created). We aim to acknowledge within 72 hours and will coordinate disclosure.

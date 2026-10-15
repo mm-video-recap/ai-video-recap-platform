@@ -50,7 +50,7 @@ docker compose up --build
 
 ## Reporting security issues
 
-Don't open a public issue. See `docs/SECURITY.md` for the private contact. We aim to acknowledge within 72 hours.
+Don't open a public issue. See `docs/SECURITY.md` for the current reporting process (no private email contact is published yet). We aim to acknowledge within 72 hours.
 
 ## Good first issues
 

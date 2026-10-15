@@ -185,18 +185,6 @@ export default function ContactPage() {
           <SupportForm />
           <BugForm />
           <FeatureForm />
-          <Card className="p-6">
-            <h2 className="text-lg font-bold">🔒 {t("contact.securityTitle")}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-              {t("contact.securityDesc")}
-            </p>
-            <a
-              href={`mailto:${t("contact.securityEmail")}`}
-              className="mt-4 inline-block rounded-xl border border-[var(--border)] px-4 py-2.5 font-mono text-sm font-semibold transition-colors hover:border-indigo-500/60"
-            >
-              {t("contact.securityEmail")}
-            </a>
-          </Card>
         </div>
       </main>
       <Footer />

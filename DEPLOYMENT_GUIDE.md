@@ -43,7 +43,7 @@ Prerequisites: a GitHub account, an email address for OAuth consent (Gmail or Mi
 
 ## Step 0 — Prepare the repository
 
-- ☐ Push the repo to GitHub (**public vs private — your choice, needs your approval**). Note: the working copy has no `.git` yet — the user creates the repo via browser takeover, then run `git init`, `git add -A`, verify `git status` shows no `.env`, run `python3 scripts/secret_scan.py` (exit 0), commit, `git remote add`, push. A full-tree push cannot be done via the GitHub web UI — local git auth is needed.
+- ☐ Push the repo to GitHub (**Public** — confirmed). Local git is ready: `.git` exists, branch `main`, local first commit created (commit author: GitHub noreply address), secret scan clean. Remaining: create the GitHub repo (`ai-video-recap-platform`) via browser takeover, then `git remote add` (URL approval needed), then push. A full-tree push cannot be done via the GitHub web UI — local git auth is needed.
 - ☐ Copy `.env.example` to `.env` locally and fill in real values **only on your machine** (never commit `.env`; it is git-ignored).
 - ☐ Confirm `scripts/secret_scan.py` passes: `python3 scripts/secret_scan.py` (exit 0, no hits).
 

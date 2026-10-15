@@ -50,7 +50,7 @@
 - ✅ ကုဒ်ထဲတွင် လျှို့ဝှက်ချက် (secret / API key) တစ်ခုမှ hardcode မလုပ်ထားပါ — `scripts/secret_scan.py` clean, exit 0 (2026-10-14 တွင် ပြန်စစ်ပြီး)။
 
 **Repository တည်နေရာ:** `~/workspace/AI-VIDEO-RECAP-PLATFORM`
-**Git:** ⚠️ `.git` **မရှိပါ** — ဤ repo သည် git repo မဟုတ်သေးပါ။ Deployment မလုပ်မီ `git init` + GitHub သို့ push လုပ်ရန် လိုသည် (သို့မဟုတ် ရှိပြီးသား GitHub repo ရှိလျှင် ထိုနေရာသို့ ကူးယူရန် လိုသည်)။
+**Git:** ✅ `.git` ရှိပြီး — branch `main`၊ local first commit ဖန်တီးပြီး (commit author: GitHub noreply address သုံးထားသည်)။ ကျန်သည်မှာ GitHub repo ဖန်တီးခြင်း + push သာ (သီးသန့် approval လိုသည်)။
 
 ---
 
@@ -179,7 +179,7 @@ Upload → Ingestion → Processing (FFmpeg) → AI Analysis (Speech → Vision 
 
 ### ၄.၅ Deployment Pass (Phase 7) — 2026-10-15 00:37 Asia/Yangon — Audit + Fix + Hosting သုတေသန
 
-**Backup (ပြင်ဆင်မှုများ မလုပ်မီ):** `~/workspace/AI-VIDEO-RECAP-PLATFORM-backup-20261015-deploy.tar.gz` (391,361 bytes, 202 ဖိုင်, listing စစ်ပြီး, venv/node_modules/.next/`__pycache__` မပါ)။ 20261014 tarball ကို မထိထားပါ။ **Git repo မရှိသေးပါ** (`.git` မရှိ) — backup tarball များသာ audit anchor ဖြစ်သည်။
+**Backup (ပြင်ဆင်မှုများ မလုပ်မီ):** `~/workspace/AI-VIDEO-RECAP-PLATFORM-backup-20261015-deploy.tar.gz` (391,361 bytes, 202 ဖိုင်, listing စစ်ပြီး, venv/node_modules/.next/`__pycache__` မပါ)။ 20261014 tarball ကို မထိထားပါ။ **Git repo မရှိသေးပါ** (`.git` မရှိ) — backup tarball များသာ audit anchor ဖြစ်သည်။ [ထိုအချိန်က မှတ်တမ်း — 2026-10-15 တွင် `git init` + first commit ပြီးစီးပြီး။]
 
 **ပြင်ဆင်ခဲ့သော ဖိုင် ၂၀ ခု (audit + fix worker):** `.env.example`, `DEPLOYMENT_GUIDE.md`, `docker-compose.yml`, `docs/SECURITY.md`, `scripts/contract_check.py`, `supabase/migrations/001_init.sql`, `backend/main.py`, `backend/config.py`, `backend/database/models.py`, `backend/agents/agent01_ingestion.py`, `backend/api/routes_videos.py`, `backend/api/routes_jobs.py`, `backend/api/routes_results.py`, `backend/api/routes_admin.py`, `backend/api/schemas.py`, `backend/tests/conftest.py`, `backend/tests/test_deploy_pass.py` (အသစ်, test 11 ခု), `frontend/lib/api.ts`, `frontend/lib/types.ts`, `frontend/app/upload/page.tsx`။ ဤ report pass က `PROJECT_COMPLETION_REPORT.md`, `TEST_RESULTS.md`, `DEPLOYMENT_GUIDE.md` တို့ကို အပ်ဒိတ်လုပ်ပြီး `AI_VIDEO_RECAP_FINAL_PROJECT_REPORT.pdf` ကို ထုတ်သည်။
 
@@ -470,7 +470,7 @@ Upload → Ingestion → Processing (FFmpeg) → AI Analysis (Speech → Vision 
 | B14 | **Dependency audit** — pip-audit + npm audit | Audit ရလဒ် မရှိ (npm audit 403, pip-audit မရှိ) | Developer | pip-audit install လုပ်ပြီး run ခြင်း; registry access ရှိသော ပတ်ဝန်းကျင်တွင် `npm audit` run ခြင်း |
 | B15 | **`subtitle_language` + `recap_style` ဆုံးဖြတ်ချက်** | ✅ **FIXED 2026-10-15** — backend parameter ထပ်ဖြည့်ပြီး (validated query param, Job တွင် သိမ်းသည်) | Developer | ပြီးစီးပြီး — ထပ်လုပ်စရာ မရှိပါ |
 | B16 | **တကယ့် AI recap စမ်းသပ်မှု (live key ဖြင့်)** | AI recap တစ်ကြိမ်မှ မထုတ်ရသေးပါ | အသုံးပြုသူ (key ပေး) + Developer | B2–B5 ပြီးမှ, live key ဖြင့် တကယ့် ဗီဒီယိုဖြင့် E2E run ပြီး AI summary/highlight/subtitle စစ်ခြင်း |
-| B17 | **Git repo ဖန်တီးခြင်း + GitHub push** | `.git` မရှိပါ — deployment သည် GitHub repo ကို လိုသည် | အသုံးပြုသူ (ပိုင်ရှင်) / Developer | အသုံးပြုသူက browser takeover ဖြင့် GitHub repo ဖန်တီးခြင်း → `git init` → `git add -A` → `git status` တွင် `.env` မပါခြင်း စစ်ခြင်း → `secret_scan.py` exit 0 စစ်ခြင်း → commit → remote add → push။ Full-tree push ကို web UI ဖြင့် မလုပ်နိုင်ပါ — local git auth လိုသည်။ Repo ကို **public vs private** ရွေးချယ်ရန် အသုံးပြုသူ၏ ခွင့်ပြုချက် လိုသည်။ |
+| B17 | **Git repo ဖန်တီးခြင်း + GitHub push** | ✅ `git init` ပြီးစီးပြီး — branch `main`၊ local first commit ဖန်တီးပြီး (commit author: GitHub noreply address)။ ကျန်သည်မှာ GitHub repo ဖန်တီးခြင်း + push သာ | အသုံးပြုသူ (ပိုင်ရှင်) / Developer | အသုံးပြုသူက browser takeover ဖြင့် GitHub repo (`ai-video-recap-platform`, **Public**) ဖန်တီးခြင်း → `git remote add` (URL approval လိုသည်) → push။ Repo ကို **Public** အဖြစ် အတည်ပြုပြီး။ |
 | B18 | **Repo-root README.md** | Root README မရှိပါ | Developer | `docs/README.md` မှ root README ဖန်တီးရန် (သေးငယ်သော အလုပ်) |
 | B19 | **Upload အစောပိုင်း size cap** (Content-Length / streaming cap) | ✅ **FIXED 2026-10-15** — `Content-Length` > cap → 413 (body မဖတ်ဘဲ); chunked body ဖြတ်ပြီး partial temp ဖျက်သည် | Developer (backend) | ပြီးစီးပြီး — live 2 GB upload စမ်းသပ်မှုသာ ကျန်သည် (မဖြစ်မနေ မဟုတ်) |
 | B20 | **Load / pen test + browser-based test** | တစ်ခါမှ မလုပ်ရသေးပါ | Developer | Staging ရှိမှ လုပ်ရန် |
@@ -508,7 +508,7 @@ Upload → Ingestion → Processing (FFmpeg) → AI Analysis (Speech → Vision 
 | # | အလုပ် | ဦးစားပေး | ခန့်မှန်းအားထုတ်မှု (ESTIMATE) |
 |---|---|---|---|
 | B1 | CORS wildcard ပြင်ဆင်မှု + ပြန်စမ်းခြင်း | ✅ **ပြီးစီးပြီး (2026-10-15)** — deploy အချိန်တွင် exact origin သတ်မှတ်ခြင်းသာ ကျန်သည် | ~0.5–1 နာရီ |
-| B17 | Git init + GitHub push | 🔴 P0 — deploy အတွက် လိုအပ်သည် | ~0.5 နာရီ |
+| B17 | Git init + GitHub push | ✅ Git init ပြီးစီးပြီး — GitHub push ကျန်သည် (🔴 P0) | ~0.5 နာရီ |
 | B2 | Supabase project + migration (တစ်ကြိမ်သာ) + bucket | 🔴 P0 | ~1–2 နာရီ |
 | B3 | AI key များ စုဆောင်းခြင်း | 🔴 P0 | ~0.5–1 နာရီ (provider အတည်ပြုမှုအပေါ် မူတည်) |
 | B4 | Redis provisioning + env ၃ ခုလုံးတွင် သတ်မှတ်ခြင်း | 🔴 P0 | ~0.5–1 နာရီ |
