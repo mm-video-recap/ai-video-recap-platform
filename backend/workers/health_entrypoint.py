@@ -49,6 +49,8 @@ def build_celery_command() -> list:
         "worker",
         "--concurrency",
         concurrency,
+        "--loglevel",
+        "info",
         "-Q",
         QUEUES,
     ]

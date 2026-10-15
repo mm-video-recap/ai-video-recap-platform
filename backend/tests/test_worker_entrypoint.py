@@ -59,6 +59,14 @@ def test_command_concurrency_env_override(monkeypatch):
     assert cmd[cmd.index("--concurrency") + 1] == "4"
 
 
+def test_command_loglevel_info(monkeypatch):
+    # "ready" + Beat lines are INFO-level; the default WARNING level hides
+    # them, which made a healthy worker look stuck (Railway incident
+    # 2026-10-16: worker Online + stable, no "ready" line for 5+ minutes).
+    cmd = health_entrypoint.build_celery_command()
+    assert cmd[cmd.index("--loglevel") + 1] == "info"
+
+
 def test_health_endpoint_ok():
     server, port = _serve_once()
     try:
