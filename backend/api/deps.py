@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends, Header, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.config import Settings, get_settings
@@ -102,7 +103,18 @@ def get_current_user(
                     display_name=(auth_user.email or "").split("@")[0] or None,
                     is_admin=is_admin)
         db.add(user)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Race: a concurrent first request for this user (the
+            # dashboard fires /api/auth/me and /api/videos at once)
+            # already inserted the row. Roll back and use it instead
+            # of 500ing — live incident 2026-10-16: three 500s on
+            # duplicate key "users_pkey" during cutover.
+            db.rollback()
+            user = db.query(User).filter_by(id=auth_user.id).one_or_none()
+            if user is None:
+                raise
         db.refresh(user)
     elif user.is_admin != is_admin:
         user.is_admin = is_admin
