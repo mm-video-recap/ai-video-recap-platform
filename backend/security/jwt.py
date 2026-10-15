@@ -2,13 +2,16 @@
 JWT authentication against Supabase Auth.
 
 Supabase issues ES256/HS256... in practice Supabase Auth signs access tokens
-with HS256 (SUPABASE_JWT_SECRET) on older projects or RS256 with a published
-JWKS document on newer ones. This module supports both:
+with HS256 (SUPABASE_JWT_SECRET) on older projects or RS256/ES256 with a
+published JWKS document on newer ones. This module supports all three:
 
 1. If SUPABASE_JWT_SECRET is set -> verify with HS256 against the secret.
 2. Otherwise -> fetch the JWKS document from
    {SUPABASE_URL}/auth/v1/.well-known/jwks.json (cached in-memory) and
-   verify RS256 signatures.
+   verify RS256 or ES256 signatures. NOTE: newer Supabase projects sign
+   with ES256 (EC P-256) — allowing RS256 only rejects every real user
+   token, which the frontend turns into an infinite login<->dashboard
+   reload loop (401 -> /login -> /dashboard -> 401 ...).
 
 Design is import-safe: without PyJWT installed, verify_jwt raises
 AuthUnavailableError instead of crashing at import time.
@@ -95,7 +98,8 @@ def verify_jwt(token: str, *, supabase_url: str = "", jwt_secret: str = "") -> A
             if not _HTTPX_AVAILABLE:
                 raise AuthUnavailableError("httpx is not installed; cannot fetch JWKS")
             signing_key = _get_jwk_client(supabase_url).get_signing_key_from_jwt(token)
-            claims = _pyjwt.decode(token, signing_key.key, algorithms=["RS256"],
+            claims = _pyjwt.decode(token, signing_key.key,
+                                   algorithms=["RS256", "ES256"],
                                    options={"verify_aud": False})
     except AuthError:
         raise

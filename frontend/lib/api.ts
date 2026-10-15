@@ -54,7 +54,16 @@ async function apiFetch<T>(
   }
   const res = await fetch(`${apiBase()}${path}`, { ...init, headers });
   if (res.status === 401 && typeof window !== "undefined") {
-    window.location.href = "/login";
+    // Hard redirect to /login on 401 — EXCEPT for /api/auth/me itself.
+    // /me IS the auth check: AuthProvider already handles its failure
+    // (profile -> null). Redirecting on /me's own 401 creates an
+    // infinite login<->dashboard reload loop (login sees a valid
+    // Supabase session and bounces back to /dashboard, which calls /me
+    // again). Live incident 2026-10-16: an ES256 token rejected by the
+    // backend (RS256-only verifier) flickered exactly this way.
+    if (path !== "/api/auth/me") {
+      window.location.href = "/login";
+    }
     throw new ApiError(401, "Unauthorized");
   }
   if (res.status === 204) return undefined as T;
