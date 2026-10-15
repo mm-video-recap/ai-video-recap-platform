@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
+import { useLiveJobId } from "@/hooks/useLiveJobId";
 import { getResult, postFeedback } from "@/lib/api";
 import { formatDuration } from "@/lib/utils";
 import type { RecapResult } from "@/lib/types";
@@ -30,11 +31,11 @@ function recordDownload(title: string, kind: "video" | "subtitle") {
 }
 
 function ResultContent() {
-  // The jobId is read from the live URL at runtime (not from a params
-  // prop — see page.tsx). This is what makes static export work for any
-  // /result/<job-id> served via the host rewrite.
-  const params = useParams();
-  const jobId = typeof params.jobId === "string" ? params.jobId : "placeholder";
+  // The jobId is read from the LIVE URL at runtime via useLiveJobId —
+  // useParams() returns the build-time "placeholder" in a static export,
+  // which made the page fetch /api/jobs/placeholder (2026-10-16).
+  // Null until the real id is known, so nothing fetches the placeholder.
+  const jobId = useLiveJobId();
   const { t } = useT();
   const { getAccessToken } = useAuth();
   const { toast } = useToast();
@@ -53,6 +54,7 @@ function ResultContent() {
   const [playerKey, setPlayerKey] = useState(0);
 
   const load = async () => {
+    if (!jobId) return;
     setLoading(true);
     setError(false);
     try {
@@ -76,6 +78,7 @@ function ResultContent() {
   };
 
   const share = async () => {
+    if (!jobId) return;
     const url = `${window.location.origin}/result/${jobId}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -98,7 +101,7 @@ function ResultContent() {
   };
 
   const sendFeedback = async () => {
-    if (!rating) return;
+    if (!rating || !jobId) return;
     setSendingFeedback(true);
     try {
       const token = await getAccessToken();

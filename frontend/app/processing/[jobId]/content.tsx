@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { useJobStream } from "@/hooks/useJobStream";
+import { useLiveJobId } from "@/hooks/useLiveJobId";
 import ProcessingSteps from "@/components/ProcessingSteps";
 import Card from "@/components/Card";
 import Button from "@/components/Button";
@@ -16,11 +17,12 @@ function formatElapsed(ms: number): string {
 }
 
 function ProcessingContent() {
-  // The jobId is read from the live URL at runtime (not from a params
-  // prop — see page.tsx). This is what makes static export work for any
-  // /processing/<job-id> served via the host rewrite.
-  const params = useParams();
-  const jobId = typeof params.jobId === "string" ? params.jobId : "placeholder";
+  // The jobId is read from the LIVE URL at runtime via useLiveJobId —
+  // useParams() returns the build-time "placeholder" in a static export,
+  // which made the page poll /api/jobs/placeholder forever (2026-10-16).
+  // Null until the real id is known, so the stream never starts on
+  // the placeholder id.
+  const jobId = useLiveJobId();
   const { t } = useT();
   const router = useRouter();
   const { stage, progress, message, status, error } = useJobStream(jobId);

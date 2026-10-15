@@ -466,20 +466,25 @@ def build_pipeline(video_id: str, job_id: str, priority: int = PRIORITY_NORMAL):
 
 
 def broker_reachable(timeout: float = 1.5) -> bool:
-    """Quick TCP check: is the Celery broker actually up?"""
+    """Quick check: is the Celery broker actually up?
+
+    Must parse the FULL broker URL (via from_url) — building a client
+    from host/port alone drops the password (and db index), so a
+    password-protected broker (Railway Redis) answers NOAUTH and the
+    check wrongly reports unreachable. Live incident 2026-10-16: the
+    API's /ready Redis check (from_url) said ok while enqueue skipped
+    every job as "broker unreachable", so uploads returned 201 but no
+    worker task ever started.
+    """
     try:
         import redis  # noqa: PLC0415
-        from urllib.parse import urlparse  # noqa: PLC0415
 
         from backend.config import get_settings  # noqa: PLC0415
-        url = urlparse(get_settings().CELERY_BROKER_URL)
-        client = redis.Redis(host=url.hostname or "localhost",
-                             port=url.port or 6379,
-                             socket_connect_timeout=timeout,
-                             socket_timeout=timeout)
+        client = redis.Redis.from_url(
+            get_settings().CELERY_BROKER_URL,
+            socket_connect_timeout=timeout, socket_timeout=timeout)
         try:
-            client.ping()
-            return True
+            return bool(client.ping())
         finally:
             client.close()
     except Exception:
