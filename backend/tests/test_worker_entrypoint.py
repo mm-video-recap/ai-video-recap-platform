@@ -47,6 +47,18 @@ def test_command_embed_beat_ignores_other_values(monkeypatch):
     assert "-B" not in health_entrypoint.build_celery_command()
 
 
+def test_command_concurrency_defaults_to_two(monkeypatch):
+    monkeypatch.delenv("CELERY_WORKER_CONCURRENCY", raising=False)
+    cmd = health_entrypoint.build_celery_command()
+    assert cmd[cmd.index("--concurrency") + 1] == "2"
+
+
+def test_command_concurrency_env_override(monkeypatch):
+    monkeypatch.setenv("CELERY_WORKER_CONCURRENCY", "4")
+    cmd = health_entrypoint.build_celery_command()
+    assert cmd[cmd.index("--concurrency") + 1] == "4"
+
+
 def test_health_endpoint_ok():
     server, port = _serve_once()
     try:

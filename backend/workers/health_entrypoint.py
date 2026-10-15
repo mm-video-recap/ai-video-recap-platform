@@ -33,12 +33,22 @@ QUEUES = (
 
 
 def build_celery_command() -> list:
-    """Celery worker command; appends ``-B`` (embedded Beat) iff EMBED_BEAT=1."""
+    """Celery worker command; appends ``-B`` (embedded Beat) iff EMBED_BEAT=1.
+
+    Concurrency defaults to 2: Celery's default is the host CPU count
+    (48 on the Railway host), which forks 48 prefork children and gets
+    the container OOM-killed silently before the worker ever prints
+    "ready". Override with CELERY_WORKER_CONCURRENCY when the host has
+    the memory for more workers.
+    """
+    concurrency = os.environ.get("CELERY_WORKER_CONCURRENCY", "2")
     cmd = [
         "celery",
         "-A",
         "backend.celery_app:celery_app",
         "worker",
+        "--concurrency",
+        concurrency,
         "-Q",
         QUEUES,
     ]
