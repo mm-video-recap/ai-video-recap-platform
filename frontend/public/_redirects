@@ -1,0 +1,7 @@
+# Cloudflare Pages rewrites for the statically exported Next.js app.
+# The two dynamic routes are pre-rendered only for a placeholder jobId
+# (see their generateStaticParams). A 200 rewrite serves that placeholder
+# HTML for any real jobId while KEEPING the original URL in the browser,
+# so the pages read the real jobId from the live URL via useParams().
+/processing/*  /processing/placeholder  200
+/result/*  /result/placeholder  200

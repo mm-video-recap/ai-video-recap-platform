@@ -1,7 +1,9 @@
 # ============================================================
 # Backend API container — FastAPI (uvicorn)
 # Assumes: ~/workspace/AI-VIDEO-RECAP-PLATFORM/backend/
-#   with backend/requirements.txt and uvicorn backend.main:app, port 8000
+#   with backend/requirements.txt and uvicorn backend.main:app.
+# Port: $PORT (Render/Heroku-style hosts assign it dynamically),
+# default 8000 for local Compose (which maps 8000:8000).
 # ============================================================
 FROM python:3.12-slim AS base
 
@@ -26,7 +28,10 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
+# HEALTHCHECK runs via /bin/sh -c, so $PORT expands here.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+    CMD curl -fsS http://127.0.0.1:${PORT:-8000}/health || exit 1
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so $PORT expands at container start (exec-form CMD would
+# pass the literal string "$PORT" to uvicorn).
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
