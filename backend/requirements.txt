@@ -18,7 +18,7 @@ psycopg[binary]==3.2.13        # Supabase PostgreSQL driver (sqlite used for dev
 
 # Auth
 PyJWT==2.15.1
-cryptography==44.0.3  # required by PyJWT for ES256 (ECDSA) token verification
+cryptography==50.0.0  # required by PyJWT for ES256 (ECDSA) token verification
 
 # Background pipeline
 celery==5.5.3
