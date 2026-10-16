@@ -439,6 +439,7 @@
     "share": "Share result",
     "shortSummary": "Short summary",
     "summaryTitle": "AI Summary",
+    "notices": "Notes",
     "transcript": "Transcript"
   },
   "settings": {
@@ -516,6 +517,10 @@
     "introOutro": "Intro / outro cards",
     "introEnabled": "Include intro card",
     "outroEnabled": "Include outro card",
+    "introText": "Intro text",
+    "introTextPlaceholder": "Empty = use recap title",
+    "outroText": "Outro text",
+    "outroTextPlaceholder": "Empty = Thanks for watching",
     "voiceTitle": "Voiceover",
     "voiceOriginal": "Original audio",
     "voiceTts": "Narrate with AI voice (TTS)",

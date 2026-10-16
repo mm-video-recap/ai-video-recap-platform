@@ -247,6 +247,8 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       tts_voice: str = "thiha",
                       tts_rate: float = 1.0,
                       tts_pitch: int = 0,
+                      intro_text: str = "",
+                      outro_text: str = "",
                       priority: int = 3) -> tuple:
     """
     Create the Video + Job rows for a successful ingestion.
@@ -287,7 +289,9 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                   "tts_provider": tts_provider,
                   "tts_voice": tts_voice,
                   "tts_rate": float(tts_rate),
-                  "tts_pitch": int(tts_pitch)}
+                  "tts_pitch": int(tts_pitch),
+                  "intro_text": str(intro_text or "")[:200],
+                  "outro_text": str(outro_text or "")[:200]}
     job = Job(
         id=result.job_id,
         video_id=result.video_id,

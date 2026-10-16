@@ -119,6 +119,7 @@ export function uploadVideo(
     const { output_lang, subtitle_language, recap_style,
             intro_enabled, outro_enabled, transcription_provider,
             voice_mode, tts_provider, tts_voice, tts_rate, tts_pitch,
+            intro_text, outro_text,
             ...formExtra } =
       extra ?? {};
     const qs = new URLSearchParams();
@@ -133,6 +134,8 @@ export function uploadVideo(
     if (tts_voice) qs.set("tts_voice", tts_voice);
     if (tts_rate !== undefined) qs.set("tts_rate", tts_rate);
     if (tts_pitch !== undefined) qs.set("tts_pitch", tts_pitch);
+    if (intro_text) qs.set("intro_text", intro_text);
+    if (outro_text) qs.set("outro_text", outro_text);
     // NOTE: transcription_key stays in formExtra -> FormData body, never
     // in the URL (query strings land in access logs).
     const qsStr = qs.toString();

@@ -78,6 +78,7 @@ export interface RecapResult {
   highlights: Highlight[];
   transcript: TranscriptCue[];
   subtitle_url?: string | null;
+  warnings?: string[];
 }
 
 export interface UploadResult {

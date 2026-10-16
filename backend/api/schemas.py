@@ -81,6 +81,7 @@ class ResultsResponse(BaseModel):
     highlights: list[HighlightItem]
     transcript: list[TranscriptItem]
     subtitle_url: str | None
+    warnings: list[str] = []
 
 
 # ------------------------------------------------------------------ feedback / reports

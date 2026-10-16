@@ -319,3 +319,51 @@ def test_gemini_tts_uses_settings_model(tmp_path, monkeypatch):
                                GEMINI_TTS_MODEL="gemini-9-custom-tts")
     asyncio.run(tts_mod._synthesize_gemini("Hi", "Kore", settings, tmp_path / "x.wav"))
     assert "gemini-9-custom-tts" in seen[0]
+
+
+def test_intro_outro_text_resolution():
+    import backend.celery_app.tasks as tasks
+
+    summary = {"title": "Recap Title"}
+    # Custom text wins.
+    assert tasks._intro_outro_texts(
+        {"intro_enabled": True, "intro_text": "My Intro",
+         "outro_enabled": True, "outro_text": "My Outro"}, summary) == (
+        "My Intro", "My Outro")
+    # Empty custom text -> defaults.
+    assert tasks._intro_outro_texts(
+        {"intro_enabled": True, "intro_text": "",
+         "outro_enabled": True, "outro_text": "  "}, summary) == (
+        "Recap Title", "Thanks for watching — AI Video Recap")
+    # Disabled -> None (card dropped).
+    assert tasks._intro_outro_texts(
+        {"intro_enabled": False, "outro_enabled": False}, summary) == (None, None)
+    # Missing keys -> backward compat (enabled, defaults).
+    assert tasks._intro_outro_texts({}, summary) == (
+        "Recap Title", "Thanks for watching — AI Video Recap")
+
+
+def test_persist_ingestion_stores_intro_outro_text():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.agents.agent01_ingestion import IngestionResult, persist_ingestion
+    from backend.database import Base, Video
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    db.add(__import__("backend.database", fromlist=["User"]).User(
+        id="u1", email="u1@dev.local"))
+    db.commit()
+    res = IngestionResult(
+        ok=True, job_id="j1", video_id="v1", container="mp4",
+        metadata={"original_name": "a.mp4", "duration_sec": 10.0,
+                  "size_bytes": 100, "sha256_prefix": "ab"})
+    persist_ingestion(db, res, user_id="u1",
+                      storage_path="uploads/v1/original.mp4",
+                      intro_text="Hello Intro", outro_text="Bye Outro")
+    db.commit()
+    video = db.query(Video).filter_by(id="v1").one()
+    assert video.meta["intro_text"] == "Hello Intro"
+    assert video.meta["outro_text"] == "Bye Outro"

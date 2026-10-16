@@ -47,6 +47,8 @@ function UploadContent() {
   const [recapStyle, setRecapStyle] = useState(prefs.summaryStyle);
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
+  const [introText, setIntroText] = useState("");
+  const [outroText, setOutroText] = useState("");
   const [voice, setVoice] = useState<VoicePrefs>(() => loadVoicePrefs());
 
   const updateVoice = (patch: Partial<VoicePrefs>) => {
@@ -126,6 +128,8 @@ function UploadContent() {
           recap_style: recapStyle,
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
+          intro_text: introText.trim(),
+          outro_text: outroText.trim(),
           // Voiceover (TTS narration) prefs from this page.
           voice_mode: voice.voiceMode,
           tts_provider: voice.ttsProvider,
@@ -242,7 +246,29 @@ function UploadContent() {
                   <span className="label-text">{t("upload.introOutro")}</span>
                   <div className="space-y-3">
                     {toggleRow(t("upload.introEnabled"), introEnabled, setIntroEnabled)}
+                    {introEnabled && (
+                      <input
+                        type="text"
+                        value={introText}
+                        onChange={(e) => setIntroText(e.target.value)}
+                        maxLength={200}
+                        placeholder={t("upload.introTextPlaceholder")}
+                        aria-label={t("upload.introText")}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                      />
+                    )}
                     {toggleRow(t("upload.outroEnabled"), outroEnabled, setOutroEnabled)}
+                    {outroEnabled && (
+                      <input
+                        type="text"
+                        value={outroText}
+                        onChange={(e) => setOutroText(e.target.value)}
+                        maxLength={200}
+                        placeholder={t("upload.outroTextPlaceholder")}
+                        aria-label={t("upload.outroText")}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                      />
+                    )}
                   </div>
                 </div>
                 <div>

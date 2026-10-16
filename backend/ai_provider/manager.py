@@ -255,8 +255,29 @@ class GeminiProvider(AIProvider):
         chunks = _split_wav_chunks(Path(audio_path), self._TRANSCRIBE_CHUNK_SEC)
         segments: list[dict] = []
         for offset, chunk_bytes in chunks:
-            text = await self._generate_with_audio(
-                chunk_bytes, _GEMINI_TRANSCRIBE_PROMPT)
+            # Transient 503 "high demand" spikes: retry the chunk a few
+            # times with backoff instead of failing the whole speech stage
+            # (live 2026-10-17: one 503 left the job with no transcript
+            # and therefore no subtitles at all).
+            text = None
+            last_err: Exception | None = None
+            for attempt in (1, 2, 3):
+                try:
+                    text = await self._generate_with_audio(
+                        chunk_bytes, _GEMINI_TRANSCRIBE_PROMPT)
+                    break
+                except ProviderError as exc:
+                    last_err = exc
+                    if getattr(exc, "status", None) in (503, 429) or getattr(exc, "retryable", False):
+                        if attempt < 3:
+                            log.warning("gemini transcription chunk retry %d/3 after %s",
+                                        attempt, exc)
+                            await asyncio.sleep(20 * attempt)
+                            continue
+                    raise
+            if text is None:
+                raise ProviderError(
+                    f"gemini transcription chunk failed after retries: {last_err}")
             try:
                 data = json.loads(text)
             except json.JSONDecodeError as exc:

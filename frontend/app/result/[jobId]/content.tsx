@@ -181,6 +181,19 @@ function ResultContent() {
         </Button>
       </div>
 
+      {/* Render notices (e.g. TTS fallback / failure) — surfaced so the
+          user can see why the audio is original instead of narration. */}
+      {result.warnings && result.warnings.length > 0 && (
+        <div className="mt-5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <h3 className="mb-2 text-sm font-bold">⚠️ {t("result.notices")}</h3>
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {result.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* AI Summary */}
       <Card className="mt-6 p-6">
         <h2 className="mb-4 text-xl font-extrabold">📝 {t("result.summaryTitle")}</h2>

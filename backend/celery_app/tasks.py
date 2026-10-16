@@ -389,6 +389,18 @@ def _narration_text(summary: dict, transcript: list[dict]) -> str:
     return spoken.strip()[:4000]
 
 
+def _intro_outro_texts(prefs: dict, summary: dict) -> tuple[str | None, str | None]:
+    """Resolve intro/outro card text: custom user text wins, else defaults
+    (recap title / Thanks for watching). Disabled card -> None."""
+    intro = None
+    if prefs.get("intro_enabled", True):
+        intro = (prefs.get("intro_text") or "").strip() or summary.get("title", "Video Recap")
+    outro = None
+    if prefs.get("outro_enabled", True):
+        outro = (prefs.get("outro_text") or "").strip() or "Thanks for watching — AI Video Recap"
+    return intro, outro
+
+
 @celery_app.task(bind=True, name="backend.celery_app.tasks.render_recap",
                  max_retries=1, time_limit=3600, soft_time_limit=3300)
 def render_recap(self, job_id: str):
@@ -434,6 +446,7 @@ def render_recap(self, job_id: str):
         prefs = (video.meta or {}) if video is not None else {}
         intro_enabled = prefs.get("intro_enabled", True)
         outro_enabled = prefs.get("outro_enabled", True)
+        intro_text, outro_text = _intro_outro_texts(prefs, summary)
         voice_mode = prefs.get("voice_mode", "original")
         narration_text = ""
         tts_kwargs: dict = {}
@@ -442,6 +455,9 @@ def render_recap(self, job_id: str):
             # Falls back to key points / transcript when the summary
             # step failed, so TTS still runs (see _narration_text).
             narration_text = _narration_text(summary, transcript)
+            log.info("render narration job=%s voice_mode=%s provider=%s voice=%s chars=%d",
+                     job_id, voice_mode, tts_kwargs.get("tts_provider"),
+                     tts_kwargs.get("tts_voice"), len(narration_text))
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),
                 "tts_voice": prefs.get("tts_voice", "thiha"),
@@ -452,9 +468,8 @@ def render_recap(self, job_id: str):
         result = renderer.render(
             proc.get("normalized_path"), highlights, transcript,
             summary.get("title", "Video Recap"), job_id,
-            intro_text=summary.get("title") if intro_enabled else None,
-            outro_text=("Thanks for watching — AI Video Recap"
-                        if outro_enabled else None),
+            intro_text=intro_text,
+            outro_text=outro_text,
             intro_enabled=bool(intro_enabled),
             outro_enabled=bool(outro_enabled),
             narration_text=narration_text or None,

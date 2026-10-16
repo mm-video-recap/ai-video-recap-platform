@@ -439,6 +439,7 @@
     "share": "ရလဒ် မျှဝေရန်",
     "shortSummary": "အတို အကျဉ်းချုပ်",
     "summaryTitle": "AI အကျဉ်းချုပ်",
+    "notices": "မှတ်ချက်",
     "transcript": "စာသားမှတ်တမ်း"
   },
   "settings": {
@@ -516,6 +517,10 @@
     "introOutro": "အစ / အဆုံး ကတ်",
     "introEnabled": "အစ ကတ် (Intro) ထည့်ရန်",
     "outroEnabled": "အဆုံး ကတ် (Outro) ထည့်ရန်",
+    "introText": "Intro စာသား",
+    "introTextPlaceholder": "ဗလာ = အကျဉ်းချုပ် ခေါင်းစဉ် သုံးမယ်",
+    "outroText": "Outro စာသား",
+    "outroTextPlaceholder": "ဗလာ = Thanks for watching သုံးမယ်",
     "voiceTitle": "အသံ (Voiceover)",
     "voiceOriginal": "မူရင်း အသံ",
     "voiceTts": "AI အသံဖြင့် ပြောပြရန် (TTS)",

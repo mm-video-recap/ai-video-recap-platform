@@ -160,6 +160,8 @@ def synthesize_narration(text: str, provider: str, voice: str, rate: float,
             capture_output=True, text=True, timeout=300, check=False)
         if proc.returncode != 0 or not merged.exists():
             raise RuntimeError(f"TTS merge failed: {proc.stderr[-300:]}")
+        log.info("tts ok provider=%s voice=%s chunks=%d",
+                 provider, voice, len(chunks))
         return merged
     except Exception as exc:
         log.warning("tts synthesis failed (%s): %s", provider, exc)

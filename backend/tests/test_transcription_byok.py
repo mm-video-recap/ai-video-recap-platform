@@ -229,3 +229,49 @@ def test_upload_with_user_key_stores_ciphertext(client, auth_headers, make_mp4_b
         assert decrypt_key(enc) == "sk-user-groq-key"
     finally:
         db.close()
+
+
+def test_gemini_transcription_retries_on_503(monkeypatch):
+    """A transient 503 (model high demand) must be retried per chunk,
+    not fail the whole speech stage on first attempt."""
+    import asyncio
+    import wave as _wave
+
+    from backend.ai_provider.manager import GeminiProvider, ProviderError
+
+    calls = {"n": 0}
+
+    class _FakeResp:
+        def __init__(self, status):
+            self.status_code = status
+            self.text = '{"error": {"code": 503, "message": "high demand"}}'
+
+    async def _fake_generate(self, audio_bytes, prompt):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ProviderError("503 high demand", status=503, retryable=True)
+        return '{"segments": [{"start": 0, "end": 1, "text": "hi"}]}'
+
+    monkeypatch.setattr(GeminiProvider, "_generate_with_audio", _fake_generate)
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr("asyncio.sleep", lambda s: _real_sleep(0))
+    # Build a tiny valid WAV so chunking works.
+    import io as _io
+    buf = _io.BytesIO()
+    with _wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 16000)
+    wav_path = "/tmp/test_retry_503.wav"
+    open(wav_path, "wb").write(buf.getvalue())
+
+    import os
+    os.environ.setdefault("GEMINI_API_KEY", "test-key")
+    provider = GeminiProvider.__new__(GeminiProvider)
+    provider._keys = ["k"]
+    from backend.config import Settings
+    provider.settings = Settings()
+    out = asyncio.run(provider.transcribe(wav_path))
+    assert out["transcript"] == [{"start": 0, "end": 1, "text": "hi"}]
+    assert calls["n"] == 3

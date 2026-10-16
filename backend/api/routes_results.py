@@ -94,6 +94,7 @@ def get_results(job_id: str, request: Request,
                                       if k in s})
                     for s in speech.get("transcript", []) if isinstance(s, dict)],
         subtitle_url=_resolve_url(sub_out, job_id, "subtitles", base_url) if sub_out else None,
+        warnings=[str(w) for w in (data.get("render", {}) or {}).get("warnings", [])],
     )
 
 
