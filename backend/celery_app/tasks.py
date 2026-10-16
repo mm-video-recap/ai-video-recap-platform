@@ -344,7 +344,16 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
         out = asyncio.run(ProviderManager(settings).complete(
             "summary", prompt, json_mode=True, max_tokens=8000))
         text = out[0] if isinstance(out, tuple) else out
-        data = json.loads(text)
+        # Gemini often wraps JSON in ```json fences — plain json.loads
+        # would fail and silently fall back to the untranslated text.
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            import re  # noqa: PLC0415
+            m = re.search(r"\{.*\}", text, re.S)
+            if not m:
+                raise
+            data = json.loads(m.group(0))
         translated = data.get("segments", [])
         if not isinstance(translated, list) or len(translated) != len(segments):
             raise ValueError("translation segment count mismatch")
@@ -459,6 +468,10 @@ def render_recap(self, job_id: str):
         job.result = {**prev, "render": {
             "video_key": video_key,
             "subtitle_mode": result.subtitle_mode,
+            # Surface render warnings (e.g. TTS fallback / failure) in the
+            # job result so the user isn't left guessing why the audio
+            # is original instead of narration.
+            "warnings": list(result.warnings or []),
             "warnings": result.warnings,
         }}
         db.commit()

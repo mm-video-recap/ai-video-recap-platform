@@ -123,6 +123,33 @@ def test_render_with_narration_adds_audio_to_video_only_source(tmp_path, monkeyp
 
 
 @needs_ffmpeg
+def test_render_falls_back_to_gemini_when_edge_unreachable(tmp_path, monkeypatch):
+    """Edge TTS down -> Gemini TTS used instead of silently keeping audio."""
+    src = tmp_path / "src.mp4"
+    _make_source(src, with_audio=False, dur=4)
+    narr = tmp_path / "gemini_narration.wav"
+    _make_sine_wav(narr, 3.0)
+
+    def _fake_synthesize(text, provider, voice, rate, pitch, workdir, settings=None):
+        if provider == "edge":
+            return None  # simulate unreachable Edge endpoint
+        assert provider == "gemini" and voice == "Charon"  # thiha -> Charon
+        return narr
+
+    monkeypatch.setattr("backend.agents.agent_tts.synthesize_narration",
+                        _fake_synthesize)
+    agent = RenderingAgent(tmp_path / "results")
+    res = agent.render(
+        src, [{"start": 0, "end": 2}], [{"start": 0, "end": 2, "text": "hi"}],
+        "T", "j-fallback", intro_text="Intro", outro_text="Thanks",
+        narration_text="Test narration.",
+        tts_provider="edge", tts_voice="thiha", tts_rate=1.0, tts_pitch=0)
+    assert res.ok, res.errors
+    assert "audio" in _probe_streams(res.video_path)
+    assert any("Gemini voice Charon" in w for w in res.warnings)
+
+
+@needs_ffmpeg
 def test_render_without_narration_unchanged(tmp_path):
     src = tmp_path / "src.mp4"
     _make_source(src, with_audio=True, dur=4)

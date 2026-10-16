@@ -265,6 +265,19 @@ class RenderingAgent:
                     narrated = synthesize_narration(
                         narration_text, tts_provider, tts_voice, tts_rate,
                         tts_pitch, workdir, settings=settings)
+                    # Edge TTS is network-fragile (its endpoint can be
+                    # unreachable from a datacenter). Fall back to Gemini
+                    # TTS — the Gemini API is already proven reachable —
+                    # rather than silently keeping the original audio.
+                    if narrated is None and tts_provider == "edge":
+                        gemini_voice = "Charon" if tts_voice == "thiha" else "Kore"
+                        narrated = synthesize_narration(
+                            narration_text, "gemini", gemini_voice,
+                            tts_rate, 0, workdir, settings=settings)
+                        if narrated is not None:
+                            res.warnings.append(
+                                "edge TTS unavailable; used Gemini voice "
+                                f"{gemini_voice} instead")
                     if narrated is not None:
                         target = self._duration(joined)
                         fitted = fit_narration_to_duration(narrated, target, workdir) if target else None
