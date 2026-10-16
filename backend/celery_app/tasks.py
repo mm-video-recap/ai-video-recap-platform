@@ -196,6 +196,16 @@ def process_video(self, job_id: str):
         _next(ai_analyze, job_id, job.priority)
         log.info("process_video done job=%s", job_id)
     except Exception as exc:
+        # A Retry raised by the inner self.retry() above must propagate
+        # untouched. Catching it here retried AGAIN (a second task
+        # message for the same job) and then fell through to _fail_job,
+        # marking the job failed on every retry. Live 2026-10-16: two
+        # workers ran the same job seconds apart, both writing
+        # normalized.mp4, and every normalize failed with 0 frames.
+        from celery.exceptions import Retry  # noqa: PLC0415
+
+        if isinstance(exc, Retry):
+            raise
         log.exception("process_video job=%s crashed", job_id)
         if self.request.retries < self.max_retries and "crashed" not in str(exc)[:20]:
             try:

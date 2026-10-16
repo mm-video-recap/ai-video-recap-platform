@@ -87,7 +87,12 @@ class SupabaseStorage(StorageBackend):
 
     def delete(self, key: str) -> None:
         try:
-            httpx.delete(
+            # httpx.delete() takes no body kwargs — json= raises
+            # TypeError ("delete() got an unexpected keyword argument
+            # 'json'"). Live 2026-10-16: every cleanup delete failed
+            # with that error, so orphaned files accumulated.
+            httpx.request(
+                "DELETE",
                 f"{self._base}/storage/v1/object/{self._bucket}",
                 headers={**self._headers, "Content-Type": "application/json"},
                 json={"prefixes": [key.lstrip("/")]},

@@ -85,17 +85,44 @@ class RenderingAgent:
                     continue
                 fh.write(f"{i}\n{ts(start)} --> {ts(end)}\n{text}\n\n")
 
+    def _has_audio(self, path: Path) -> bool:
+        """True when the file has an audio stream (ffprobe). Defaults to
+        True when ffprobe is unavailable — preserve current behavior."""
+        ffprobe = shutil.which("ffprobe")
+        if not ffprobe:
+            return True
+        try:
+            proc = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "a",
+                 "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=30, check=False)
+            return bool((proc.stdout or "").strip())
+        except Exception:
+            return True
+
     def _title_card(self, workdir: Path, text: str, name: str,
-                    w: int = 1280, h: int = 720) -> Path | None:
-        """2-second title card; returns path or None if drawtext unavailable."""
+                    w: int = 1280, h: int = 720, has_audio: bool = True) -> Path | None:
+        """2-second title card; returns path or None if drawtext unavailable.
+
+        When has_audio, the card carries a SILENT audio stream. The
+        concat step takes its stream layout from the FIRST segment —
+        a video-only intro card silently dropped the clips' audio from
+        every recap (live 2026-10-16: recaps came out with no sound).
+        When the source has no audio, all parts stay video-only so the
+        concat layouts still match.
+        """
         out = workdir / f"{name}.mp4"
         safe = text.replace("'", "").replace(":", " ")[:80]
         cmd = [self.ffmpeg, "-y", "-f", "lavfi",
-               "-i", f"color=c=0x1a2b4a:s={w}x{h}:d=2:r=30",
-               "-vf", f"drawtext=text='{safe}':fontsize=56:fontcolor=white:"
+               "-i", f"color=c=0x1a2b4a:s={w}x{h}:d=2:r=30"]
+        if has_audio:
+            cmd += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+        cmd += ["-vf", f"drawtext=text='{safe}':fontsize=56:fontcolor=white:"
                       f"x=(w-text_w)/2:y=(h-text_h)/2",
-               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-               str(out)]
+               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+        if has_audio:
+            cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+        cmd += [str(out)]
         p = self._run(cmd, timeout=120)
         return out if p.returncode == 0 and out.exists() else None
 
@@ -120,15 +147,22 @@ class RenderingAgent:
             workdir = self.root / job_id
             workdir.mkdir(parents=True, exist_ok=True)
 
+            # All concat parts must share one stream layout: detect once
+            # whether the source has audio, and build every part to match.
+            has_audio = self._has_audio(src)
+
             # 1) cut clips
             clips: list[Path] = []
             for i, hl in enumerate(highlights):
                 clip = workdir / f"clip_{i:02d}.mp4"
-                p = self._run([self.ffmpeg, "-y",
-                               "-ss", str(hl["start"]), "-to", str(hl["end"]),
-                               "-i", str(src),
-                               "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                               "-c:a", "aac", "-b:a", "128k", str(clip)], timeout=600)
+                cmd = [self.ffmpeg, "-y",
+                       "-ss", str(hl["start"]), "-to", str(hl["end"]),
+                       "-i", str(src),
+                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+                if has_audio:
+                    cmd += ["-c:a", "aac", "-b:a", "128k"]
+                cmd += [str(clip)]
+                p = self._run(cmd, timeout=600)
                 if p.returncode == 0 and clip.exists():
                     clips.append(clip)
                 else:
@@ -139,8 +173,8 @@ class RenderingAgent:
 
             # 2) concat (+ optional title cards)
             parts: list[Path] = []
-            intro = self._title_card(workdir, intro_text or title, "intro") if intro_text or title else None
-            outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro") if outro_text else None
+            intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio) if intro_text or title else None
+            outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio) if outro_text else None
             if intro:
                 parts.append(intro)
             parts.extend(clips)
