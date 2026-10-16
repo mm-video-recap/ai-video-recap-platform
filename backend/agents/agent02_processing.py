@@ -89,18 +89,30 @@ class ProcessingAgent:
             res.duration_sec = duration
 
             # 1) normalize -> H.264/AAC faststart mp4
+            # Cap the LONG side at 1280px + 2 threads + shorter lookahead:
+            # a 1440x2560 vertical clip died at 0 frames with no ffmpeg
+            # error line live (2026-10-16), consistent with the encoder
+            # being killed for memory on a small container. The recap
+            # never needs more than 1280px on its long side.
             normalized = workdir / "normalized.mp4"
             p = self._run([self.ffmpeg, "-y", "-i", str(src),
+                           "-vf", "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                           "-threads", "2", "-x264-params", "rc-lookahead=20",
                            "-c:a", "aac", "-b:a", "128k",
                            "-movflags", "+faststart", str(normalized)])
             if p.returncode != 0 or not normalized.exists():
-                # Log the FULL ffmpeg stderr: the job error only keeps the
-                # first ~200 chars, which hid the real cause live
-                # (2026-10-16: every retry showed just "normalize failed").
-                log.error("normalize failed for job=%s: %s",
-                          job_id, (p.stderr or "")[-2000:])
-                res.errors.append(f"normalize failed: {p.stderr[-400:]}")
+                # Log the FULL ffmpeg stderr + return code: the job error
+                # only keeps the tail, which hid the real cause live
+                # (2026-10-16: every retry showed just "normalize failed"
+                # with 0 frames and no error line). returncode -9 = killed
+                # (OOM), -11 = segfault, 1 = ffmpeg error.
+                log.error("normalize failed for job=%s: returncode=%s input_bytes=%s stderr=%s",
+                          job_id, p.returncode,
+                          src.stat().st_size if src.exists() else -1,
+                          (p.stderr or "")[-2000:])
+                res.errors.append(
+                    f"normalize failed (ffmpeg exit {p.returncode}): {p.stderr[-400:]}")
                 return res
             res.normalized_path = str(normalized)
 

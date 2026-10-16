@@ -100,6 +100,29 @@ export function loadPreferences(): { summaryStyle: string; defaultLanguage: stri
   return { summaryStyle: "detailed", defaultLanguage: "my" };
 }
 
+/** Transcription (BYOK) preferences: provider + the user's own key.
+ * Stored in localStorage only. The key is sent with each upload as a
+ * form field (never a query param) and stored encrypted server-side. */
+export type TranscriptionProvider = "auto" | "gemini" | "groq";
+
+export function loadTranscriptionPrefs(): { provider: TranscriptionProvider; key: string } {
+  try {
+    const raw = window.localStorage.getItem("recap_transcription");
+    if (raw) {
+      const p = JSON.parse(raw);
+      const provider = p.provider === "gemini" || p.provider === "groq" ? p.provider : "auto";
+      return { provider, key: typeof p.key === "string" ? p.key : "" };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { provider: "auto", key: "" };
+}
+
+export function saveTranscriptionPrefs(provider: TranscriptionProvider, key: string) {
+  window.localStorage.setItem("recap_transcription", JSON.stringify({ provider, key }));
+}
+
 /** Canonical processing stage keys, in pipeline order. */
 export const STAGE_ORDER = [
   "upload",

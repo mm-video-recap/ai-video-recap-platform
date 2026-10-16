@@ -59,8 +59,15 @@ class SpeechAgent:
         result["engine"] = result.get("engine", provider)
         return result
 
-    def transcribe(self, audio_path: str | Path | None, job_id: str) -> dict:
-        """Returns the transcript dict; always returns a dict, never raises."""
+    def transcribe(self, audio_path: str | Path | None, job_id: str,
+                   provider: str | None = None,
+                   key: str | None = None) -> dict:
+        """Returns the transcript dict; always returns a dict, never raises.
+
+        provider: "auto" (default, groq -> huggingface chain), "gemini"
+        or "groq" (that provider only). key: per-user (BYOK) key for the
+        chosen provider; None means the server env keys.
+        """
         out = {"transcript": [], "language": None, "confidence": 0.0,
                "engine": "none", "degraded": True}
         try:
@@ -68,12 +75,17 @@ class SpeechAgent:
                 out["error"] = "no audio available for transcription"
                 log.warning("speech job=%s: no audio", job_id)
                 return out
-            if _FASTER_WHISPER_AVAILABLE:
+            if _FASTER_WHISPER_AVAILABLE and not provider:
                 log.info("speech job=%s: faster-whisper", job_id)
                 out = self._local_transcribe(str(audio_path))
             elif self.provider_manager is not None:
-                log.info("speech job=%s: provider chain", job_id)
-                out = self._provider_transcribe(str(audio_path))
+                if provider in ("gemini", "groq"):
+                    log.info("speech job=%s: provider %s (user-chosen)", job_id, provider)
+                    out, _used = asyncio.run(
+                        self.provider_manager.transcribe_with(provider, str(audio_path), key=key))
+                else:
+                    log.info("speech job=%s: provider chain", job_id)
+                    out = self._provider_transcribe(str(audio_path))
             else:
                 out["error"] = "no transcription backend available"
                 log.warning("speech job=%s: no backend", job_id)

@@ -240,6 +240,8 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       recap_style: str = "detailed",
                       intro_enabled: bool = True,
                       outro_enabled: bool = True,
+                      transcription_provider: str = "auto",
+                      transcription_key_enc: str = "",
                       priority: int = 3) -> tuple:
     """
     Create the Video + Job rows for a successful ingestion.
@@ -273,7 +275,9 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
     # migration is needed; missing keys mean "enabled" (backward compat).
     video.meta = {**(video.meta or {}),
                   "intro_enabled": bool(intro_enabled),
-                  "outro_enabled": bool(outro_enabled)}
+                  "outro_enabled": bool(outro_enabled),
+                  "transcription_provider": transcription_provider,
+                  "transcription_key_enc": transcription_key_enc}
     job = Job(
         id=result.job_id,
         video_id=result.video_id,

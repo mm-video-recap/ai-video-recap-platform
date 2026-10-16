@@ -117,7 +117,8 @@ export function uploadVideo(
     // intro_enabled, outro_enabled).
     // Any other keys in `extra` are sent as form fields (ignored by backend).
     const { output_lang, subtitle_language, recap_style,
-            intro_enabled, outro_enabled, ...formExtra } =
+            intro_enabled, outro_enabled, transcription_provider,
+            ...formExtra } =
       extra ?? {};
     const qs = new URLSearchParams();
     if (output_lang) qs.set("output_lang", output_lang);
@@ -125,6 +126,9 @@ export function uploadVideo(
     if (recap_style) qs.set("recap_style", recap_style);
     if (intro_enabled !== undefined) qs.set("intro_enabled", intro_enabled);
     if (outro_enabled !== undefined) qs.set("outro_enabled", outro_enabled);
+    if (transcription_provider) qs.set("transcription_provider", transcription_provider);
+    // NOTE: transcription_key stays in formExtra -> FormData body, never
+    // in the URL (query strings land in access logs).
     const qsStr = qs.toString();
     xhr.open(
       "POST",

@@ -15,6 +15,7 @@ import {
   formatDuration,
   getExtension,
   loadPreferences,
+  loadTranscriptionPrefs,
 } from "@/lib/utils";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
@@ -106,6 +107,15 @@ function UploadContent() {
           recap_style: recapStyle,
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
+          // Transcription choice from Settings (BYOK): provider as a query
+          // param, the key as a form field (never in the URL).
+          ...(() => {
+            const tp = loadTranscriptionPrefs();
+            return {
+              transcription_provider: tp.provider,
+              ...(tp.key ? { transcription_key: tp.key } : {}),
+            };
+          })(),
         }
       );
       toast(t("upload.success"), "success");

@@ -226,7 +226,7 @@ def process_video(self, job_id: str):
 def ai_analyze(self, job_id: str):
     """Agents 03-06: speech -> vision -> summary -> highlights."""
     from backend.config import get_settings  # noqa: PLC0415
-    from backend.database import Job  # noqa: PLC0415
+    from backend.database import Job, Video  # noqa: PLC0415
 
     db = _db()
     try:
@@ -239,6 +239,19 @@ def ai_analyze(self, job_id: str):
         proc = prev.get("processing", {})
         lang = job.output_lang or "en"
 
+        # Per-user transcription choice from video.meta (Settings BYOK):
+        # provider "auto" = server chain; "gemini"/"groq" = that provider
+        # only, with the user's own key when one was supplied (decrypted
+        # transiently here, never logged).
+        video = db.query(Video).filter_by(id=job.video_id).one_or_none()
+        prefs = (video.meta or {}) if video is not None else {}
+        speech_provider = prefs.get("transcription_provider", "auto")
+        speech_key = None
+        enc = prefs.get("transcription_key_enc")
+        if enc:
+            from backend.security.keyvault import decrypt_key  # noqa: PLC0415
+            speech_key = decrypt_key(enc)
+
         from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
         manager = ProviderManager(settings)
 
@@ -249,7 +262,8 @@ def ai_analyze(self, job_id: str):
         speech = SpeechAgent(model_name=settings.WHISPER_MODEL,
                              device=settings.WHISPER_DEVICE,
                              provider_manager=manager)
-        speech_out = speech.transcribe(proc.get("audio_path"), job_id)
+        speech_out = speech.transcribe(proc.get("audio_path"), job_id,
+                                       provider=speech_provider, key=speech_key)
         transcript = speech_out.get("transcript", [])
 
         # -- agent04 vision --

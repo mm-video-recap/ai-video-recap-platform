@@ -100,12 +100,58 @@ class AIProvider(ABC):
 
 
 # ---------------------------------------------------------------- Gemini
+_GEMINI_TRANSCRIBE_PROMPT = (
+    "Transcribe this audio verbatim. Return ONLY JSON: "
+    '{"segments": [{"start": <seconds>, "end": <seconds>, "text": "<words>"}]}. '
+    "Split into segments at natural pauses (each a few seconds long). "
+    "Keep the original language; do not translate. "
+    "Timestamps are relative to the START of this audio chunk."
+)
+
+
+def _split_wav_chunks(path: Path, chunk_sec: int) -> list[tuple[float, bytes]]:
+    """Split a PCM WAV into <=chunk_sec pieces. Returns (offset_sec, bytes)
+    with a full WAV header per piece. Non-WAV audio falls back to one
+    chunk holding the whole file (Gemini still accepts it)."""
+    try:
+        import io
+        import wave
+
+        with wave.open(str(path), "rb") as wf:
+            params = wf.getparams()
+            rate = wf.getframerate() or 16000
+            frame_bytes = max(1, wf.getnchannels() * wf.getsampwidth())
+            frames_per_chunk = max(1, int(chunk_sec * rate))
+            chunks: list[tuple[float, bytes]] = []
+            offset = 0.0
+            while True:
+                frames = wf.readframes(frames_per_chunk)
+                if not frames:
+                    break
+                buf = io.BytesIO()
+                with wave.open(buf, "wb") as out:
+                    out.setparams(params)
+                    out.writeframes(frames)
+                chunks.append((offset, buf.getvalue()))
+                # readframes returns BYTES, not frames — divide by the
+                # frame size or offsets drift 2x (1ch 16-bit).
+                offset += (len(frames) // frame_bytes) / rate
+            return chunks or [(0.0, path.read_bytes())]
+    except Exception:
+        return [(0.0, path.read_bytes())]
+
+
 class GeminiProvider(AIProvider):
     name = "gemini"
+    # Inline-audio chunk size for transcription (seconds of 16 kHz mono
+    # WAV per generateContent call).
+    _TRANSCRIBE_CHUNK_SEC = 300
 
-    def __init__(self, settings: Settings, transport=None):
+    def __init__(self, settings: Settings, transport=None, keys: list[str] | None = None):
         super().__init__(settings, transport)
-        self._keys: list[str] = settings.gemini_keys
+        # keys override: a per-user (BYOK) key for one job. When None, the
+        # server env keys are used (settings.gemini_keys).
+        self._keys: list[str] = list(keys) if keys is not None else settings.gemini_keys
         self._key_index: int = 0
 
     @property
@@ -195,6 +241,78 @@ class GeminiProvider(AIProvider):
                 last_exc = exc
                 self._rotate()
         raise ProviderError(f"gemini vision: all keys exhausted: {last_exc}")
+
+    async def transcribe(self, audio_path: str | Path) -> dict:
+        """Transcribe audio with Gemini multimodal (audio in, JSON out).
+
+        The extracted audio is 16 kHz mono WAV. Inline audio is sent in
+        <=5-minute chunks (keeps each request small); segments are
+        offset back to full-audio time. Raises ProviderError when the
+        key is missing or every chunk fails.
+        """
+        if not self._keys:
+            raise ProviderError("gemini not configured (no API keys)")
+        chunks = _split_wav_chunks(Path(audio_path), self._TRANSCRIBE_CHUNK_SEC)
+        segments: list[dict] = []
+        for offset, chunk_bytes in chunks:
+            text = await self._generate_with_audio(
+                chunk_bytes, _GEMINI_TRANSCRIBE_PROMPT)
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ProviderError(
+                    f"gemini transcription returned non-JSON: {text[:200]}") from exc
+            for seg in data.get("segments", []) or []:
+                try:
+                    start = float(seg.get("start", 0)) + offset
+                    end = float(seg.get("end", start)) + offset
+                except (TypeError, ValueError):
+                    continue
+                if end <= start:
+                    continue
+                segments.append({"start": start, "end": end,
+                                 "text": str(seg.get("text", "")).strip()})
+        segments.sort(key=lambda s: s["start"])
+        return {"transcript": segments, "language": None,
+                "confidence": None, "engine": "gemini"}
+
+    async def _generate_with_audio(self, audio_bytes: bytes, prompt: str) -> str:
+        """One generateContent call with inline WAV audio + a text prompt."""
+        b64 = base64.b64encode(audio_bytes).decode()
+        model = self.settings.GEMINI_MODEL
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        body = {"contents": [{"parts": [
+            {"text": prompt},
+            {"inline_data": {"mime_type": "audio/wav", "data": b64}},
+        ]}],
+            "generationConfig": {"maxOutputTokens": 8192,
+                                 "responseMimeType": "application/json"}}
+        last_exc: Exception | None = None
+        for _ in range(len(self._keys)):
+            key = self._next_key()
+            try:
+                async with self._client() as client:
+                    resp = await client.post(url, params={"key": key}, json=body)
+                if resp.status_code != 200:
+                    if self._looks_like_quota(resp.text, resp.status_code):
+                        self._rotate()
+                        last_exc = ProviderError(resp.text[:300], status=resp.status_code,
+                                                 retryable=True)
+                        continue
+                    raise ProviderError(f"gemini transcription HTTP {resp.status_code}: {resp.text[:300]}",
+                                        status=resp.status_code)
+                data = resp.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts).strip()
+                if not text:
+                    raise ProviderError("gemini transcription returned empty response")
+                return text
+            except ProviderError:
+                raise
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                last_exc = exc
+                self._rotate()
+        raise ProviderError(f"gemini transcription: all {len(self._keys)} keys exhausted: {last_exc}")
 
     async def health_check(self) -> tuple[bool, int | None, str | None]:
         if not self.configured:
@@ -291,12 +409,15 @@ class GroqProvider(_OpenAICompatProvider):
     name = "groq"
     api_base = "https://api.groq.com/openai/v1"
 
-    def __init__(self, settings, transport=None):
+    def __init__(self, settings, transport=None, keys: list[str] | None = None):
         super().__init__(settings, transport)
+        # keys override: a per-user (BYOK) key for one job. When None, the
+        # server env keys are used (settings.groq_keys).
+        self._override_keys: list[str] | None = list(keys) if keys is not None else None
         self.default_model = settings.GROQ_MODEL
 
     def _keys(self) -> list[str]:
-        return self.settings.groq_keys
+        return self._override_keys if self._override_keys is not None else self.settings.groq_keys
 
     async def transcribe(self, audio_path: str | Path) -> dict:
         keys = self._keys()
@@ -522,6 +643,20 @@ class ProviderManager:
                 self._log_usage(provider_name, None, "speech", False, ms, user_id, job_id, str(exc))
                 errors.append(f"{provider_name}: {exc}")
         raise ProviderError(f"all speech providers failed: {' | '.join(errors)}")
+
+    async def transcribe_with(self, provider_name: str, audio_path: str | Path, *,
+                              key: str | None = None) -> tuple[dict, str]:
+        """Transcribe with ONE named provider (user's choice), not the chain.
+
+        When key is given, the provider runs with that per-user (BYOK) key
+        instead of the server env keys. Raises ProviderError on failure.
+        """
+        provider_cls = {"gemini": GeminiProvider, "groq": GroqProvider}.get(provider_name)
+        if provider_cls is None:
+            raise ProviderError(f"unknown transcription provider: {provider_name}")
+        provider = provider_cls(self.settings, keys=[key] if key else None)
+        result = await provider.transcribe(audio_path)
+        return result, provider_name
 
     # -- vision -------------------------------------------------------------
     async def describe_frame(self, image_path: str | Path, prompt: str, *,

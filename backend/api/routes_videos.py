@@ -9,7 +9,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from backend.agents.agent01_ingestion import IngestionAgent, persist_ingestion
@@ -59,6 +59,11 @@ def upload_video(request: Request, file: UploadFile = File(...),
                                           pattern="^(concise|detailed|highlights)$"),
                  intro_enabled: bool = Query(default=True),
                  outro_enabled: bool = Query(default=True),
+                 transcription_provider: str = Query(default="auto",
+                                                     pattern="^(auto|gemini|groq)$"),
+                 # Per-user (BYOK) transcription key: a FORM field, never a
+                 # query param — query strings land in access logs.
+                 transcription_key: str = Form(default=""),
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     settings = get_settings()
@@ -124,6 +129,17 @@ def upload_video(request: Request, file: UploadFile = File(...),
         stored_path = storage_key if storage.name != "local" else str(
             storage.absolute(storage_key))  # type: ignore[attr-defined]
 
+        # Per-user transcription key: encrypt at rest (Fernet) before it
+        # touches the DB. Refuse outright when the server has no
+        # USER_KEY_ENCRYPTION_KEY — never store a plaintext key.
+        transcription_key_enc = ""
+        if transcription_key:
+            from backend.security.keyvault import encrypt_key  # noqa: PLC0415
+            try:
+                transcription_key_enc = encrypt_key(transcription_key)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
         video, job = persist_ingestion(
             db, result, user_id=user.id, storage_path=stored_path,
             output_lang=output_lang,
@@ -131,6 +147,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
             recap_style=recap_style,
             intro_enabled=intro_enabled,
             outro_enabled=outro_enabled,
+            transcription_provider=transcription_provider,
+            transcription_key_enc=transcription_key_enc,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)
         db.commit()
         log_event(db, user.id, "video_uploaded",
