@@ -35,11 +35,22 @@ class SupabaseStorage(StorageBackend):
         data = Path(local_path).read_bytes()
         resp = httpx.post(
             self._obj_url(key),
-            headers={**self._headers, "Content-Type": "application/octet-stream"},
+            # x-upsert: overwrite when the key already exists (Supabase
+            # POST otherwise 400s with "Duplicate"). Live 2026-10-16:
+            # upload puts 400d and the bare raise_for_status hid the
+            # Supabase error body, so log it — it names the real cause.
+            headers={**self._headers,
+                      "Content-Type": "application/octet-stream",
+                      "x-upsert": "true"},
             content=data,
             timeout=120,
         )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError:
+            log.warning("supabase put failed for %s: %s %s",
+                        key, resp.status_code, resp.text[:500])
+            raise
         return key
 
     def get_url(self, key: str, expires_sec: int = 3600) -> str:
@@ -74,10 +85,15 @@ class SupabaseStorage(StorageBackend):
     def download(self, key: str, local_path: str | Path) -> Path:
         target = Path(local_path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with httpx.stream("GET", self._obj_url(key), headers=self._headers,
-                          timeout=300) as resp:
-            resp.raise_for_status()
-            with target.open("wb") as fh:
-                for chunk in resp.iter_bytes(1024 * 1024):
-                    fh.write(chunk)
+        try:
+            with httpx.stream("GET", self._obj_url(key), headers=self._headers,
+                              timeout=300) as resp:
+                resp.raise_for_status()
+                with target.open("wb") as fh:
+                    for chunk in resp.iter_bytes(1024 * 1024):
+                        fh.write(chunk)
+        except httpx.HTTPStatusError as exc:
+            log.warning("supabase download failed for %s: %s %s",
+                        key, exc.response.status_code, exc.response.text[:500])
+            raise
         return target

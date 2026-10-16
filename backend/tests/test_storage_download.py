@@ -25,7 +25,34 @@ def test_local_download_copies(tmp_path):
     assert dest.read_bytes() == b"hello"
 
 
-def test_supabase_download_streams_to_file(monkeypatch, tmp_path):
+def test_supabase_put_sends_upsert_and_logs_body(monkeypatch, tmp_path, caplog):
+    import logging
+
+    seen = {}
+
+    class _Resp:
+        status_code = 400
+        text = '{"error":"Duplicate","message":"already exists"}'
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("400", request=None, response=self)
+
+    def _post(url, **kwargs):
+        seen["headers"] = kwargs["headers"]
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", _post)
+    store = SupabaseStorage("https://ref.supabase.co", "svc-key", "recap-results")
+    src = tmp_path / "up.mp4"
+    src.write_bytes(b"data")
+    with caplog.at_level(logging.WARNING, logger="storage.supabase"):
+        try:
+            store.put(src, "uploads/v1/original.mp4")
+            raise AssertionError("expected HTTPStatusError")
+        except httpx.HTTPStatusError:
+            pass
+    assert seen["headers"]["x-upsert"] == "true"
+    assert "already exists" in caplog.text
     class _Resp:
         def __enter__(self):
             return self
