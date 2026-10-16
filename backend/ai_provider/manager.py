@@ -153,6 +153,27 @@ class GeminiProvider(AIProvider):
         # server env keys are used (settings.gemini_keys).
         self._keys: list[str] = list(keys) if keys is not None else settings.gemini_keys
         self._key_index: int = 0
+        # Monotonic timestamp until which Gemini calls must wait. Gemini
+        # free-tier quota is per PROJECT, not per key — keys minted under
+        # one account share a single quota pool (proven live 2026-10-17:
+        # 11 keys exhausted within minutes, 105 rotations in one job).
+        # Instantly cycling keys on 429 is therefore futile hammering:
+        # after a full exhaustion, the next call waits out a cooldown so
+        # the per-minute window can reset instead of re-burning all keys.
+        self._quota_cooldown_until: float = 0.0
+
+    async def _sleep(self, seconds: float) -> None:
+        """Overridable sleep (tests stub this to avoid real waits)."""
+        await asyncio.sleep(seconds)
+
+    async def _wait_quota_cooldown(self) -> None:
+        remaining = self._quota_cooldown_until - time.monotonic()
+        if remaining > 0:
+            log.info("gemini: quota cooldown, waiting %.0fs", remaining)
+            await self._sleep(min(remaining, 60.0))
+
+    def _mark_quota_exhausted(self) -> None:
+        self._quota_cooldown_until = time.monotonic() + 60.0
 
     @property
     def configured(self) -> bool:
@@ -170,6 +191,7 @@ class GeminiProvider(AIProvider):
                             json_mode: bool = False, max_tokens: int = 2048) -> str:
         if not self.configured:
             raise ProviderError("gemini not configured (no API keys)")
+        await self._wait_quota_cooldown()
         model = model or self.settings.GEMINI_MODEL
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         body: dict[str, Any] = {
@@ -192,6 +214,10 @@ class GeminiProvider(AIProvider):
                         self._rotate()
                         last_exc = ProviderError(resp.text[:300], status=resp.status_code,
                                                  retryable=True)
+                        # Brief pause before the next key: quota is shared
+                        # per project, so hammering all keys in one second
+                        # cannot succeed — give the window a breath.
+                        await self._sleep(2.0)
                         continue
                     raise ProviderError(f"gemini HTTP {resp.status_code}: {resp.text[:300]}",
                                         status=resp.status_code)
@@ -206,11 +232,13 @@ class GeminiProvider(AIProvider):
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 last_exc = exc
                 self._rotate()
+        self._mark_quota_exhausted()
         raise ProviderError(f"gemini: all {len(self._keys)} keys exhausted: {last_exc}")
 
     async def analyze_image(self, image_path: str | Path, prompt: str) -> dict:
         if not self.configured:
             raise ProviderError("gemini not configured (no API keys)")
+        await self._wait_quota_cooldown()
         raw = Path(image_path).read_bytes()
         b64 = base64.b64encode(raw).decode()
         model = self.settings.GEMINI_MODEL
@@ -230,6 +258,7 @@ class GeminiProvider(AIProvider):
                         self._rotate()
                         last_exc = ProviderError(resp.text[:200], status=resp.status_code,
                                                  retryable=True)
+                        await self._sleep(2.0)
                         continue
                     raise ProviderError(f"gemini vision HTTP {resp.status_code}")
                 data = resp.json()
@@ -240,6 +269,7 @@ class GeminiProvider(AIProvider):
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 last_exc = exc
                 self._rotate()
+        self._mark_quota_exhausted()
         raise ProviderError(f"gemini vision: all keys exhausted: {last_exc}")
 
     async def transcribe(self, audio_path: str | Path) -> dict:
@@ -300,6 +330,7 @@ class GeminiProvider(AIProvider):
 
     async def _generate_with_audio(self, audio_bytes: bytes, prompt: str) -> str:
         """One generateContent call with inline WAV audio + a text prompt."""
+        await self._wait_quota_cooldown()
         b64 = base64.b64encode(audio_bytes).decode()
         model = self.settings.GEMINI_MODEL
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -320,6 +351,7 @@ class GeminiProvider(AIProvider):
                         self._rotate()
                         last_exc = ProviderError(resp.text[:300], status=resp.status_code,
                                                  retryable=True)
+                        await self._sleep(2.0)
                         continue
                     raise ProviderError(f"gemini transcription HTTP {resp.status_code}: {resp.text[:300]}",
                                         status=resp.status_code)
@@ -334,6 +366,7 @@ class GeminiProvider(AIProvider):
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 last_exc = exc
                 self._rotate()
+        self._mark_quota_exhausted()
         raise ProviderError(f"gemini transcription: all {len(self._keys)} keys exhausted: {last_exc}")
 
     async def health_check(self) -> tuple[bool, int | None, str | None]:

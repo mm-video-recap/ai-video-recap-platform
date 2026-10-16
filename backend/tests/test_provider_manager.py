@@ -8,7 +8,7 @@ import json
 import httpx
 import pytest
 
-from backend.ai_provider.manager import ProviderManager
+from backend.ai_provider.manager import GeminiProvider, ProviderError, ProviderManager
 from backend.config import Settings
 
 
@@ -122,3 +122,53 @@ def test_gemini_health_check_hits_configured_model(monkeypatch):
     provider._client = lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(_gone))
     healthy, _, err = asyncio.run(provider.health_check())
     assert healthy is False and err == "HTTP 404"
+
+
+def test_quota_exhaustion_sets_cooldown(monkeypatch):
+    """After all keys hit 429, the provider must enter a cooldown so the
+    next call waits instead of instantly re-burning every key (live
+    2026-10-17: 11 keys, 105 rotations, quota is per-project)."""
+    import time as _time
+
+    def _fail(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="You exceeded your current quota")
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    monkeypatch.delenv("GEMINI_API_KEY_01", raising=False)
+    provider = GeminiProvider(Settings())
+    provider._client = lambda **kw: httpx.AsyncClient(
+        transport=httpx.MockTransport(_fail))
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    provider._sleep = _fake_sleep  # type: ignore[method-assign]
+    with pytest.raises(ProviderError, match="all 1 keys exhausted"):
+        asyncio.run(provider.generate_text("hi"))
+    assert provider._quota_cooldown_until > _time.monotonic()
+    assert sleeps == [2.0]  # brief pause between key rotations, no real wait
+
+
+def test_next_call_waits_out_cooldown(monkeypatch):
+    """A call arriving during cooldown waits (stubbed) before calling."""
+    import time as _time
+
+    def _ok(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": "done"}]}}]})
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    provider = GeminiProvider(Settings())
+    provider._client = lambda **kw: httpx.AsyncClient(
+        transport=httpx.MockTransport(_ok))
+    provider._quota_cooldown_until = _time.monotonic() + 60.0
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    provider._sleep = _fake_sleep  # type: ignore[method-assign]
+    out = asyncio.run(provider.generate_text("hi"))
+    assert out == "done"
+    assert sleeps and sleeps[0] == pytest.approx(60.0, abs=1.0)

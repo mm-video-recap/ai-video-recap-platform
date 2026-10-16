@@ -36,17 +36,21 @@ function ProcessingContent() {
   }, []);
 
   useEffect(() => {
-    if (status === "completed" && !redirecting) {
+    if (status === "completed") {
       setRedirecting(true);
       // Full page load, NOT router.push: in a static export, client-side
       // navigation to a dynamic route can stall (no RSC payload for a
       // non-prerendered param) — live 2026-10-17 the page sat on
-      // "Recap complete!" forever. A full load always serves the shell.
+      // "Recap complete!" forever.
+      // NOTE: `redirecting` is intentionally NOT in the deps: setting it
+      // re-renders, and if it were a dep the effect cleanup would
+      // clearTimeout the very timer it just set (the old bug — the
+      // redirect could never fire).
       const timer = setTimeout(
         () => window.location.assign(`/result/${jobId}`), 1800);
       return () => clearTimeout(timer);
     }
-  }, [status, redirecting, jobId]);
+  }, [status, jobId]);
 
   const failed = status === "failed";
 
