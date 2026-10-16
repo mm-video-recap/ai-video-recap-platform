@@ -688,7 +688,11 @@ class ProviderManager:
     async def describe_frame(self, image_path: str | Path, prompt: str, *,
                              user_id: str | None = None,
                              job_id: str | None = None) -> tuple[dict, str]:
-        """Vision task chain: huggingface -> gemini -> openrouter."""
+        """Vision task chain: huggingface -> gemini -> openrouter.
+
+        A provider raising a raw third-party exception (not ProviderError)
+        must not kill the whole chain: record it and try the next provider.
+        """
         errors: list[str] = []
         for provider_name in TASK_ROUTES["vision"]:
             provider = self.providers[provider_name]
@@ -702,6 +706,10 @@ class ProviderManager:
                 ms = int((time.monotonic() - started) * 1000)
                 self._log_usage(provider_name, None, "vision", False, ms, user_id, job_id, str(exc))
                 errors.append(f"{provider_name}: {exc}")
+            except Exception as exc:  # raw SDK error: chain must continue
+                ms = int((time.monotonic() - started) * 1000)
+                self._log_usage(provider_name, None, "vision", False, ms, user_id, job_id, str(exc))
+                errors.append(f"{provider_name}: {type(exc).__name__}: {exc}")
         raise ProviderError(f"all vision providers failed: {' | '.join(errors)}")
 
     # -- health -------------------------------------------------------------

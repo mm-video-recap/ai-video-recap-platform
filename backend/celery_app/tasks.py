@@ -455,9 +455,6 @@ def render_recap(self, job_id: str):
             # Falls back to key points / transcript when the summary
             # step failed, so TTS still runs (see _narration_text).
             narration_text = _narration_text(summary, transcript)
-            log.info("render narration job=%s voice_mode=%s provider=%s voice=%s chars=%d",
-                     job_id, voice_mode, tts_kwargs.get("tts_provider"),
-                     tts_kwargs.get("tts_voice"), len(narration_text))
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),
                 "tts_voice": prefs.get("tts_voice", "thiha"),
@@ -465,6 +462,9 @@ def render_recap(self, job_id: str):
                 "tts_pitch": int(prefs.get("tts_pitch", 0) or 0),
                 "settings": settings,
             }
+            log.info("render narration job=%s voice_mode=%s provider=%s voice=%s chars=%d",
+                     job_id, voice_mode, tts_kwargs.get("tts_provider"),
+                     tts_kwargs.get("tts_voice"), len(narration_text))
         result = renderer.render(
             proc.get("normalized_path"), highlights, transcript,
             summary.get("title", "Video Recap"), job_id,
