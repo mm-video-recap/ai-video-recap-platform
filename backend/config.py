@@ -17,15 +17,22 @@ from backend.security.jwt import normalize_supabase_url
 
 
 def _collect_numbered_keys(prefix: str) -> list[str]:
-    """Collect KEY_01, KEY_02, ... style env vars plus the bare KEY."""
+    """Collect numbered env vars plus the bare KEY.
+
+    Accepts BOTH naming styles, because owners naturally write either:
+    zero-padded with underscore (GEMINI_API_KEY_01) and bare suffix
+    (GEMINI_API_KEY2). Order: bare key first, then numbered in order.
+    Duplicates are removed, order preserved.
+    """
     keys: list[str] = []
-    for i in range(1, 100):
-        value = os.environ.get(f"{prefix}_{i:02d}")
-        if value:
-            keys.append(value)
     bare = os.environ.get(prefix)
-    if bare and bare not in keys:
-        keys.insert(0, bare)
+    if bare:
+        keys.append(bare)
+    for i in range(1, 100):
+        for name in (f"{prefix}_{i:02d}", f"{prefix}{i}"):
+            value = os.environ.get(name)
+            if value and value not in keys:
+                keys.append(value)
     return keys
 
 
