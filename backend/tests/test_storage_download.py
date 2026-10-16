@@ -124,3 +124,50 @@ def test_ensure_local_downloads_key_with_local_provider(tmp_path, monkeypatch):
     got = ensure_local("uploads/v9/original.mp4", "v9")
     assert got == root / "uploads" / "v9" / "original.mp4"
     assert got.read_bytes() == b"data"
+
+
+def test_supabase_get_url_prefixes_storage_v1(monkeypatch):
+    # Live 2026-10-16: storage-api returns signedURL WITHOUT "/storage/v1"
+    # ("/object/sign/..."); prepending only the bare project URL produced
+    # "https://<ref>.supabase.co/object/sign/..." which the gateway rejects
+    # with {"error":"requested path is invalid"} — video player + both
+    # downloads failed while sign itself returned 200.
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"signedURL": "/object/sign/recap-results/results/j1/recap_final.mp4?token=abc"}
+
+    def _post(url, **kwargs):
+        assert url.endswith("/storage/v1/object/sign/recap-results/results/j1/recap_final.mp4")
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", _post)
+    store = SupabaseStorage("https://ref.supabase.co", "svc-key", "recap-results")
+    assert store.get_url("results/j1/recap_final.mp4") == (
+        "https://ref.supabase.co/storage/v1/object/sign/recap-results/"
+        "results/j1/recap_final.mp4?token=abc")
+
+
+def test_supabase_get_url_keeps_full_and_prefixed_forms(monkeypatch):
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._body
+
+    cases = [
+        ("/storage/v1/object/sign/b/k.mp4?token=x",
+         "https://ref.supabase.co/storage/v1/object/sign/b/k.mp4?token=x"),
+        ("https://ref.supabase.co/storage/v1/object/sign/b/k.mp4?token=x",
+         "https://ref.supabase.co/storage/v1/object/sign/b/k.mp4?token=x"),
+    ]
+    for body, expected in cases:
+        monkeypatch.setattr(httpx, "post", lambda url, **kw: _Resp({"signedURL": body}))
+        store = SupabaseStorage("https://ref.supabase.co", "svc-key", "b")
+        assert store.get_url("k.mp4") == expected

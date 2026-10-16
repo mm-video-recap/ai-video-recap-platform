@@ -69,7 +69,21 @@ class SupabaseStorage(StorageBackend):
         )
         resp.raise_for_status()
         signed = resp.json().get("signedURL", "")
-        return f"{self._base}{signed}" if signed.startswith("/") else signed
+        # storage-api returns signedURL relative to the STORAGE API root
+        # ("/object/sign/...", WITHOUT "/storage/v1"). supabase-js
+        # prepends its storage root (".../storage/v1") itself. We must
+        # do the same: prepending only the bare project URL produced
+        # "https://<ref>.supabase.co/object/sign/..." which the gateway
+        # rejects with {"error":"requested path is invalid"} — live
+        # 2026-10-16: video player + both downloads failed that way
+        # while sign itself returned 200 and the object existed.
+        if signed.startswith("/storage/v1/"):
+            return f"{self._base}{signed}"
+        if signed.startswith("http://") or signed.startswith("https://"):
+            return signed
+        if signed.startswith("/"):
+            return f"{self._base}/storage/v1{signed}"
+        return f"{self._base}/storage/v1/{signed.lstrip('/')}" if signed else signed
 
     def delete(self, key: str) -> None:
         try:
