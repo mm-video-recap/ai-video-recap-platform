@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.8-flash"
     GEMINI_TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # Groq free-tier vision model (researched 2026-10-17; Groq retires
+    # vision models without notice — override via env, do NOT hard-code
+    # a new default without checking Groq's rate-limit page).
+    GROQ_VISION_MODEL: str = "qwen/qwen3.8-27b"
     OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
     HF_TOKEN: str = ""
     HF_VISION_MODELS: str = "llava-hf/llava-1.5-7b-hf,Qwen/Qwen2-VL-7B-Instruct,openbmb/MiniCPM-V-2_6"

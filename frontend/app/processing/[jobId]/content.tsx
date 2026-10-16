@@ -38,10 +38,15 @@ function ProcessingContent() {
   useEffect(() => {
     if (status === "completed" && !redirecting) {
       setRedirecting(true);
-      const timer = setTimeout(() => router.push(`/result/${jobId}`), 1800);
+      // Full page load, NOT router.push: in a static export, client-side
+      // navigation to a dynamic route can stall (no RSC payload for a
+      // non-prerendered param) — live 2026-10-17 the page sat on
+      // "Recap complete!" forever. A full load always serves the shell.
+      const timer = setTimeout(
+        () => window.location.assign(`/result/${jobId}`), 1800);
       return () => clearTimeout(timer);
     }
-  }, [status, redirecting, router, jobId]);
+  }, [status, redirecting, jobId]);
 
   const failed = status === "failed";
 

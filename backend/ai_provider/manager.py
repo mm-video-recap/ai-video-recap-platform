@@ -48,7 +48,7 @@ TASK_ROUTES: dict[str, list[str]] = {
     "summary": ["gemini", "groq", "openrouter"],
     "transcript-analysis": ["groq", "gemini", "openrouter"],
     "backup": ["openrouter", "groq", "gemini"],
-    "vision": ["huggingface", "gemini", "openrouter"],
+    "vision": ["huggingface", "gemini", "groq", "openrouter"],
     "speech": ["groq", "huggingface"],
 }
 
@@ -255,13 +255,14 @@ class GeminiProvider(AIProvider):
         chunks = _split_wav_chunks(Path(audio_path), self._TRANSCRIBE_CHUNK_SEC)
         segments: list[dict] = []
         for offset, chunk_bytes in chunks:
-            # Transient 503 "high demand" spikes: retry the chunk a few
-            # times with backoff instead of failing the whole speech stage
-            # (live 2026-10-17: one 503 left the job with no transcript
-            # and therefore no subtitles at all).
+            # Transient 429/503 quota spikes: retry the chunk a few times
+            # with backoff instead of failing the whole speech stage
+            # (live 2026-10-17: one 429 left the job with no transcript
+            # and therefore no subtitles at all; 4 attempts span ~2 min
+            # so a per-minute quota window can reset mid-retry).
             text = None
             last_err: Exception | None = None
-            for attempt in (1, 2, 3):
+            for attempt in (1, 2, 3, 4):
                 try:
                     text = await self._generate_with_audio(
                         chunk_bytes, _GEMINI_TRANSCRIBE_PROMPT)
@@ -269,8 +270,8 @@ class GeminiProvider(AIProvider):
                 except ProviderError as exc:
                     last_err = exc
                     if getattr(exc, "status", None) in (503, 429) or getattr(exc, "retryable", False):
-                        if attempt < 3:
-                            log.warning("gemini transcription chunk retry %d/3 after %s",
+                        if attempt < 4:
+                            log.warning("gemini transcription chunk retry %d/4 after %s",
                                         attempt, exc)
                             await asyncio.sleep(20 * attempt)
                             continue
@@ -482,6 +483,53 @@ class GroqProvider(_OpenAICompatProvider):
             except (httpx.HTTPError, OSError, ValueError) as exc:
                 last_exc = exc
         raise ProviderError(f"groq transcription failed: {last_exc}")
+
+    async def analyze_image(self, image_path: str | Path, prompt: str) -> dict:
+        """Vision via Groq free tier (OpenAI-compatible image_url).
+
+        Free fallback when Gemini is quota-exhausted (live 2026-10-17:
+        Gemini 429s killed both speech and vision on a single key).
+        Only active when GROQ_API_KEY is set; model from GROQ_VISION_MODEL.
+        """
+        keys = self._keys()
+        if not keys:
+            raise ProviderError("groq not configured (no API key)")
+        raw = Path(image_path).read_bytes()
+        b64 = base64.b64encode(raw).decode()
+        payload: dict[str, Any] = {
+            "model": self.settings.GROQ_VISION_MODEL,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ]}],
+            "max_tokens": 512,
+        }
+        last_exc: Exception | None = None
+        for key in keys:
+            try:
+                async with self._client() as client:
+                    resp = await client.post(
+                        f"{self.api_base}/chat/completions",
+                        headers={"Authorization": f"Bearer {key}"},
+                        json=payload, timeout=180)
+                if resp.status_code != 200:
+                    if self._looks_like_quota(resp.text, resp.status_code):
+                        last_exc = ProviderError(resp.text[:300], status=resp.status_code,
+                                                 retryable=True)
+                        continue
+                    raise ProviderError(f"groq vision HTTP {resp.status_code}: {resp.text[:300]}",
+                                        status=resp.status_code)
+                data = resp.json()
+                text = data["choices"][0]["message"]["content"].strip()
+                if not text:
+                    raise ProviderError("groq vision returned empty response")
+                return {"description": text}
+            except ProviderError:
+                raise
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                last_exc = exc
+        raise ProviderError(f"groq vision: all keys failed: {last_exc}")
 
 
 class OpenRouterProvider(_OpenAICompatProvider):
