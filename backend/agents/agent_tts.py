@@ -100,8 +100,9 @@ async def _synthesize_gemini(text: str, voice: str, settings, out_path: Path) ->
     keys = getattr(settings, "gemini_keys", None) or []
     if not keys:
         raise RuntimeError("no Gemini key configured for Gemini TTS")
+    tts_model = getattr(settings, "GEMINI_TTS_MODEL", None) or GEMINI_TTS_MODEL
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_TTS_MODEL}:generateContent")
+           f"{tts_model}:generateContent")
     body = {
         "contents": [{"parts": [{"text": text}]}],
         "generationConfig": {

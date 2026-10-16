@@ -263,3 +263,59 @@ def test_persist_ingestion_stores_voice_prefs():
     assert video.meta["tts_voice"] == "nilar"
     assert video.meta["tts_rate"] == 1.2
     assert video.meta["tts_pitch"] == -5
+
+
+def test_narration_text_falls_back_when_summary_failed():
+    """Empty summary (provider/model failure) must NOT silently skip TTS:
+    fall back to key points, then to the transcript itself."""
+    import backend.celery_app.tasks as tasks
+
+    assert tasks._narration_text(
+        {"summary_short": "Real summary."}, []) == "Real summary."
+    assert tasks._narration_text(
+        {"summary_short": "", "description": "",
+         "key_points": ["Point one.", "Point two."]}, []) == "Point one. Point two."
+    assert tasks._narration_text(
+        {"summary_short": "", "description": "", "key_points": []},
+        [{"text": "hello world"}, {"text": "second line"}]) == "hello world second line"
+    assert tasks._narration_text(
+        {"summary_short": "", "description": "", "key_points": []}, []) == ""
+
+
+def test_gemini_tts_uses_settings_model(tmp_path, monkeypatch):
+    import asyncio
+    import base64
+
+    import httpx
+
+    import backend.agents.agent_tts as tts_mod
+
+    seen: list[str] = []
+
+    class _FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [
+                {"inlineData": {"data": base64.b64encode(b"\x00\x00").decode()}}]}}]}
+
+    class _FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, params=None, json=None):
+            seen.append(url)
+            return _FakeResp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    settings = SimpleNamespace(gemini_keys=["k"],
+                               GEMINI_TTS_MODEL="gemini-9-custom-tts")
+    asyncio.run(tts_mod._synthesize_gemini("Hi", "Kore", settings, tmp_path / "x.wav"))
+    assert "gemini-9-custom-tts" in seen[0]

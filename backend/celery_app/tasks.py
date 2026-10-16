@@ -368,6 +368,27 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
         return segments
 
 
+def _narration_text(summary: dict, transcript: list[dict]) -> str:
+    """Narration text for TTS: the recap summary, with fallbacks.
+
+    The summary step can fail (provider down / model retired) while the
+    rest of the pipeline still runs. Previously an empty summary meant
+    narration_text == "" and the TTS step silently never ran at all
+    (live 2026-10-17: original audio kept, no TTS line in any log).
+    Fall back to key points, then to the transcript itself, so TTS
+    still narrates something in the recap language.
+    """
+    text = (summary.get("summary_short") or summary.get("description") or "").strip()
+    if text:
+        return text
+    points = [str(p).strip() for p in (summary.get("key_points") or [])]
+    points = [p for p in points if p]
+    if points:
+        return " ".join(points)
+    spoken = " ".join(str(s.get("text", "")).strip() for s in (transcript or []))
+    return spoken.strip()[:4000]
+
+
 @celery_app.task(bind=True, name="backend.celery_app.tasks.render_recap",
                  max_retries=1, time_limit=3600, soft_time_limit=3300)
 def render_recap(self, job_id: str):
@@ -418,8 +439,9 @@ def render_recap(self, job_id: str):
         tts_kwargs: dict = {}
         if voice_mode == "tts":
             # Narration = the recap summary in the recap language.
-            narration_text = (summary.get("summary_short")
-                              or summary.get("description") or "")
+            # Falls back to key points / transcript when the summary
+            # step failed, so TTS still runs (see _narration_text).
+            narration_text = _narration_text(summary, transcript)
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),
                 "tts_voice": prefs.get("tts_voice", "thiha"),

@@ -81,3 +81,44 @@ def test_all_providers_fail_raises(monkeypatch):
     })
     with pytest.raises(Exception, match="all providers failed"):
         asyncio.run(manager.complete("summary", "x"))
+
+
+def test_gemini_default_model_is_live():
+    """gemini-2.0-flash was retired by Google (live 404, 2026-10-17);
+    the default must be the model Google's own error told us to use."""
+    from backend.config import Settings
+
+    assert Settings.model_fields["GEMINI_MODEL"].default == "gemini-3.8-flash"
+
+
+def test_gemini_health_check_hits_configured_model(monkeypatch):
+    """Health check must verify the CONFIGURED model, not the model list
+    (listing returned 200 while gemini-2.0-flash was already retired)."""
+    import asyncio
+
+    import httpx
+
+    from backend.ai_provider.manager import GeminiProvider
+    from backend.config import Settings
+
+    seen_urls: list[str] = []
+
+    def _ok(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return httpx.Response(200, json={"name": "models/gemini-3.8-flash"})
+
+    def _gone(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return httpx.Response(404, json={"error": {"code": 404}})
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    provider = GeminiProvider(Settings())
+    provider._client = lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(_ok))
+    healthy, _, err = asyncio.run(provider.health_check())
+    assert healthy is True and err is None
+    assert "/models/gemini-3.8-flash" in seen_urls[-1]
+    assert "pageSize" not in seen_urls[-1]
+
+    provider._client = lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(_gone))
+    healthy, _, err = asyncio.run(provider.health_check())
+    assert healthy is False and err == "HTTP 404"

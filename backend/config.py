@@ -90,7 +90,8 @@ class Settings(BaseSettings):
     CELERY_TASK_SOFT_TIME_LIMIT_SEC: int = 3300
 
     # --- AI providers (keys live ONLY in env; never in code) ---
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
     HF_TOKEN: str = ""

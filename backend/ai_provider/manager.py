@@ -320,9 +320,14 @@ class GeminiProvider(AIProvider):
         started = time.monotonic()
         try:
             async with self._client() as client:
+                # Check the CONFIGURED model itself, not the model list:
+                # listing models returned 200 while gemini-2.0-flash was
+                # already retired, so health lied ("healthy") while every
+                # real call 404'd (live 2026-10-17).
                 resp = await client.get(
-                    "https://generativelanguage.googleapis.com/v1beta/models",
-                    params={"key": self._next_key(), "pageSize": 1},
+                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{self.settings.GEMINI_MODEL}",
+                    params={"key": self._next_key()},
                     timeout=15,
                 )
             ms = int((time.monotonic() - started) * 1000)
