@@ -72,6 +72,46 @@ class RenderingAgent:
                 pass
         return None
 
+    def _remap_transcript(self, transcript: list[dict], highlights: list[dict],
+                         intro_enabled: bool, outro_enabled: bool) -> list[dict]:
+        """Remap subtitle cues from ORIGINAL-video time to RECAP time.
+
+        The SRT is burned onto the JOINED video (intro + concatenated
+        highlight clips + outro), whose timeline is NOT the original
+        timeline. Writing original timestamps onto it put every cue at
+        the wrong moment (live 2026-10-16: subtitles out of sync). Each
+        cue is clipped to the highlight(s) it overlaps and shifted to
+        that clip's position in the recap; cues outside all highlights
+        are dropped.
+        """
+        layout: list[tuple[float, float, float]] = []  # (recap_start, orig_start, orig_end)
+        t = 2.0 if intro_enabled else 0.0  # title cards are exactly 2s
+        for hl in highlights or []:
+            try:
+                s, e = float(hl["start"]), float(hl["end"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if e > s:
+                layout.append((t, s, e))
+                t += e - s
+        remapped: list[dict] = []
+        for seg in transcript or []:
+            try:
+                s = float(seg.get("start", 0) or 0)
+                e = float(seg.get("end", s) or s)
+            except (TypeError, ValueError):
+                continue
+            text = (seg.get("text") or "").strip()
+            if not text or e <= s:
+                continue
+            for (rt, os_, oe) in layout:
+                lo, hi = max(s, os_), min(e, oe)
+                if hi > lo:
+                    remapped.append({"start": rt + (lo - os_),
+                                     "end": rt + (hi - os_), "text": text})
+        remapped.sort(key=lambda c: c["start"])
+        return remapped
+
     def _write_srt(self, path: Path, transcript: list[dict]) -> None:
         def ts(sec: float) -> str:
             ms = int(sec * 1000)
@@ -192,9 +232,11 @@ class RenderingAgent:
                 res.errors.append(f"concat failed: {p.stderr[-300:]}")
                 return res
 
-            # 3) subtitles
+            # 3) subtitles — remapped to the recap timeline (intro + clips
+            # + outro), NOT the original timeline.
             srt_path = workdir / "subtitles.srt"
-            self._write_srt(srt_path, transcript or [])
+            self._write_srt(srt_path, self._remap_transcript(
+                transcript or [], highlights, intro_enabled, outro_enabled))
             res.subtitle_path = str(srt_path)
             final = workdir / "recap_final.mp4"
             font = self._find_font()

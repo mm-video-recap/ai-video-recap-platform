@@ -313,6 +313,52 @@ def ai_analyze(self, job_id: str):
         db.close()
 
 
+def _translate_segments(settings, segments: list[dict], target_lang: str,
+                        source_lang: str | None) -> list[dict]:
+    """Translate subtitle segment texts to target_lang, keeping timestamps.
+
+    Skips translation when the detected source language already matches
+    the target. Returns the original segments on ANY failure (bad JSON,
+    wrong count, provider error) — subtitles must never fail a render.
+    """
+    target = {"my": "Myanmar (Burmese)", "en": "English"}.get(target_lang)
+    if target is None or not segments:
+        return segments
+    src = (source_lang or "").lower()
+    if (target_lang == "my" and src in ("my", "mya", "myanmar", "burmese")) or \
+       (target_lang == "en" and src in ("en", "eng", "english")):
+        return segments
+    try:
+        import asyncio  # noqa: PLC0415
+        import json  # noqa: PLC0415
+
+        from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
+
+        texts = [str(s.get("text", "")) for s in segments]
+        prompt = (
+            f"Translate each subtitle line to {target}. Return ONLY JSON: "
+            '{"segments": [{"text": "..."}]} in the SAME order and SAME '
+            "count as the input. Keep each line short and natural; do not "
+            "add explanations.\nInput:\n"
+            + json.dumps([{"text": t} for t in texts], ensure_ascii=False))
+        out = asyncio.run(ProviderManager(settings).complete(
+            "summary", prompt, json_mode=True, max_tokens=8000))
+        text = out[0] if isinstance(out, tuple) else out
+        data = json.loads(text)
+        translated = data.get("segments", [])
+        if not isinstance(translated, list) or len(translated) != len(segments):
+            raise ValueError("translation segment count mismatch")
+        result = []
+        for seg, tr in zip(segments, translated, strict=True):
+            result.append({**seg, "text": str(tr.get("text", seg.get("text", "")))})
+        log.info("subtitles translated to %s: %d segments", target_lang, len(result))
+        return result
+    except Exception as exc:
+        log.warning("subtitle translation to %s failed, keeping original: %s",
+                    target_lang, exc)
+        return segments
+
+
 @celery_app.task(bind=True, name="backend.celery_app.tasks.render_recap",
                  max_retries=1, time_limit=3600, soft_time_limit=3300)
 def render_recap(self, job_id: str):
@@ -332,6 +378,20 @@ def render_recap(self, job_id: str):
         summary = prev.get("summary", {})
         transcript = (prev.get("speech", {}) or {}).get("transcript", [])
         highlights = prev.get("highlights", [])
+        speech_lang = (prev.get("speech", {}) or {}).get("language")
+
+        # Subtitle language (job.subtitle_language): the SRT must be IN
+        # that language. Previously the raw transcript was written as-is,
+        # so "Myanmar subtitles" came out in English. Translate the
+        # segments (timestamps preserved) when needed; "none" means no
+        # subtitles at all. Translation never fails the job — on any
+        # error the original text is used.
+        subtitle_lang = job.subtitle_language or "my"
+        if subtitle_lang == "none":
+            transcript = []
+        elif transcript and subtitle_lang in ("my", "en"):
+            transcript = _translate_segments(
+                settings, transcript, subtitle_lang, speech_lang)
 
         set_job_progress(db, job_id, stage="rendering", progress=85.0,
                          message="Rendering recap video…", status="rendering")
