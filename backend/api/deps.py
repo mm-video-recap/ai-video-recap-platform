@@ -157,8 +157,19 @@ def check_fair_use(db: Session, user: User, settings: Settings,
     """Enforce the free-tier fair-use caps. Raises 429 when exceeded."""
     today = _today_utc()
 
+    # Failed uploads do NOT consume quota: the user got no result, so
+    # they can retry. Live 2026-10-16: 5 failed uploads exhausted the
+    # daily cap with zero recaps produced. A video counts only when it
+    # has at least one job that has not failed (queued / processing /
+    # completed all count — they may still consume resources).
+    from backend.database import Job  # noqa: PLC0415 - avoid import cycle
+    from sqlalchemy import select  # noqa: PLC0415
+
+    good_ids = (select(Job.video_id)
+                .where(Job.status != "failed").distinct())
     uploads = db.query(Video).filter(
-        Video.user_id == user.id, Video.created_at >= today).count()
+        Video.user_id == user.id, Video.created_at >= today,
+        Video.id.in_(good_ids)).count()
     if uploads >= settings.MAX_UPLOADS_PER_DAY:
         raise FairUseExceeded(
             f"Daily upload limit reached ({settings.MAX_UPLOADS_PER_DAY}/day). "
@@ -167,7 +178,8 @@ def check_fair_use(db: Session, user: User, settings: Settings,
     if estimated_seconds:
         from sqlalchemy import func  # noqa: PLC0415
         total_sec = db.query(func.coalesce(func.sum(Video.duration_sec), 0)).filter(
-            Video.user_id == user.id, Video.created_at >= today).scalar() or 0
+            Video.user_id == user.id, Video.created_at >= today,
+            Video.id.in_(good_ids)).scalar() or 0
         if (total_sec + estimated_seconds) / 60 > settings.MAX_PROCESSING_MINUTES_PER_DAY:
             raise FairUseExceeded(
                 f"Daily processing limit reached "

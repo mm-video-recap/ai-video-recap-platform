@@ -95,6 +95,11 @@ class ProcessingAgent:
                            "-c:a", "aac", "-b:a", "128k",
                            "-movflags", "+faststart", str(normalized)])
             if p.returncode != 0 or not normalized.exists():
+                # Log the FULL ffmpeg stderr: the job error only keeps the
+                # first ~200 chars, which hid the real cause live
+                # (2026-10-16: every retry showed just "normalize failed").
+                log.error("normalize failed for job=%s: %s",
+                          job_id, (p.stderr or "")[-2000:])
                 res.errors.append(f"normalize failed: {p.stderr[-400:]}")
                 return res
             res.normalized_path = str(normalized)

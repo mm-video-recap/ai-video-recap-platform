@@ -204,7 +204,17 @@ class IngestionAgent:
         metadata.update(probe_meta)
         metadata["ffprobe_used"] = used
         if not used:
-            warnings.append("ffprobe unavailable; container metadata is approximate")
+            if shutil.which("ffprobe"):
+                # ffprobe exists but could not read THIS file — the file
+                # is corrupt or truncated. Fail fast at ingest with a
+                # clear message instead of dying later at normalize with
+                # a cryptic FFmpeg error (live 2026-10-16: every retry
+                # failed at normalize within seconds).
+                errors.append(
+                    "File appears corrupt or truncated: ffprobe could not "
+                    "read it. Re-save / re-export the video and upload again.")
+            else:
+                warnings.append("ffprobe unavailable; container metadata is approximate")
 
         duration = probe_meta.get("duration_sec")
         if duration and duration > self.max_duration_sec:

@@ -33,7 +33,16 @@ def test_oversize_rejected():
     assert any("too large" in e.lower() for e in result.errors)
 
 
-def test_valid_mp4_accepted():
+def test_valid_mp4_accepted(monkeypatch):
+    # Fixture file is ftyp magic + zeros: real ffprobe cannot read it,
+    # and ingest now rejects files ffprobe cannot read. Patch probe
+    # metadata to simulate a real, readable file.
+    fake_meta = ({"duration_sec": 8.0, "video_codec": "h264",
+                  "audio_codec": "aac", "has_audio": True,
+                  "width": 640, "height": 360, "fps": 30.0}, True)
+    monkeypatch.setattr(
+        "backend.agents.agent01_ingestion._ffprobe_metadata",
+        lambda p: fake_meta)
     agent = IngestionAgent()
     p = _write(".mp4", _mp4(4096))
     result = agent.ingest(p, "clip.mp4", "u1")

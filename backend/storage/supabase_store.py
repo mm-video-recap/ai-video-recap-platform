@@ -96,9 +96,19 @@ class SupabaseStorage(StorageBackend):
             with httpx.stream("GET", self._obj_url(key), headers=self._headers,
                               timeout=300) as resp:
                 resp.raise_for_status()
+                expected = resp.headers.get("content-length")
                 with target.open("wb") as fh:
                     for chunk in resp.iter_bytes(1024 * 1024):
                         fh.write(chunk)
+                # A silently truncated stream would pass ingest (magic
+                # bytes + ffprobe header) and die later at normalize —
+                # fail here with a clear message instead.
+                if expected is not None:
+                    got = target.stat().st_size
+                    if got != int(expected):
+                        raise RuntimeError(
+                            f"incomplete download for {key}: "
+                            f"got {got} bytes, expected {expected}")
         except httpx.HTTPStatusError as exc:
             log.warning("supabase download failed for %s: %s %s",
                         key, exc.response.status_code, exc.response.text[:500])

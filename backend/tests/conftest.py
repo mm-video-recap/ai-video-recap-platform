@@ -79,11 +79,20 @@ def uploaded(client, auth_headers, make_mp4_bytes):
     """Upload a fake mp4 as a fresh unique user (dodges the 5/day fair-use
     cap across tests). Returns dict(video_id, job_id, headers, token)."""
     import uuid  # noqa: PLC0415
+    from unittest import mock  # noqa: PLC0415
 
     user = f"up_{uuid.uuid4().hex[:8]}"
     headers = auth_headers(user)
     files = {"file": ("clip.mp4", make_mp4_bytes(4096), "video/mp4")}
-    r = client.post("/api/videos/upload", files=files, headers=headers)
+    # The fixture file is ftyp magic + zeros: real ffprobe cannot read
+    # it, and ingest now rejects files ffprobe cannot read (corrupt /
+    # truncated). Patch probe metadata for this fixture only.
+    fake_meta = ({"duration_sec": 8.0, "video_codec": "h264",
+                  "audio_codec": "aac", "has_audio": True,
+                  "width": 640, "height": 360, "fps": 30.0}, True)
+    with mock.patch("backend.agents.agent01_ingestion._ffprobe_metadata",
+                    return_value=fake_meta):
+        r = client.post("/api/videos/upload", files=files, headers=headers)
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["video_id"] and body["job_id"]

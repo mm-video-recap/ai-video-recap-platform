@@ -78,6 +78,8 @@ def test_supabase_put_rls_hint_when_anon_key_used(monkeypatch, tmp_path, caplog)
             pass
     assert "anon key, not the service_role key" in caplog.text
     class _Resp:
+        headers = {}
+
         def __enter__(self):
             return self
 
