@@ -50,6 +50,13 @@ class SupabaseStorage(StorageBackend):
         except httpx.HTTPStatusError:
             log.warning("supabase put failed for %s: %s %s",
                         key, resp.status_code, resp.text[:500])
+            if "row-level security" in resp.text:
+                # service_role bypasses RLS; the anon key does not. This
+                # exact failure (2026-10-16) meant SUPABASE_KEY on Railway
+                # held the anon key instead of the service_role key.
+                log.warning(
+                    "supabase put hit an RLS policy: SUPABASE_KEY is "
+                    "probably the anon key, not the service_role key")
             raise
         return key
 

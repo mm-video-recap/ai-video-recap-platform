@@ -53,6 +53,30 @@ def test_supabase_put_sends_upsert_and_logs_body(monkeypatch, tmp_path, caplog):
             pass
     assert seen["headers"]["x-upsert"] == "true"
     assert "already exists" in caplog.text
+
+
+def test_supabase_put_rls_hint_when_anon_key_used(monkeypatch, tmp_path, caplog):
+    import logging
+
+    class _Resp:
+        status_code = 400
+        text = ('{"statusCode":"403","error":"Unauthorized","message":'
+                '"new row violates row-level security policy"}')
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("400", request=None, response=self)
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp())
+    store = SupabaseStorage("https://ref.supabase.co", "anon-key", "recap-results")
+    src = tmp_path / "up.mp4"
+    src.write_bytes(b"data")
+    with caplog.at_level(logging.WARNING, logger="storage.supabase"):
+        try:
+            store.put(src, "uploads/v1/original.mp4")
+            raise AssertionError("expected HTTPStatusError")
+        except httpx.HTTPStatusError:
+            pass
+    assert "anon key, not the service_role key" in caplog.text
     class _Resp:
         def __enter__(self):
             return self
