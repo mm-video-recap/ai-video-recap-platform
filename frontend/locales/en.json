@@ -504,6 +504,9 @@
       "uploadFailed": "Upload failed. Please check your connection and try again."
     },
     "estimateTitle": "Estimated processing time",
+    "introOutro": "Intro / outro cards",
+    "introEnabled": "Include intro card",
+    "outroEnabled": "Include outro card",
     "estimatedTime": "About {minutes} min",
     "estimatedTimeShort": "Under 1 min",
     "langEn": "English",

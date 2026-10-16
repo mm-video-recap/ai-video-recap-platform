@@ -32,6 +32,14 @@ def _probe_streams(path):
     return set((proc.stdout or "").split())
 
 
+def _duration(path):
+    proc = subprocess.run(
+        [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, timeout=30, check=False)
+    return float((proc.stdout or "0").strip() or 0)
+
+
 def _make_source(path, with_audio: bool, dur: int = 4):
     cmd = [FFMPEG, "-y", "-f", "lavfi", "-i",
            f"color=c=0x1a2b4a:s=640x360:d={dur}:r=30"]
@@ -181,3 +189,60 @@ def test_supabase_delete_uses_request_not_delete_kwarg(monkeypatch):
     store.delete("results/j1/recap_final.mp4")
     assert calls["method"] == "DELETE"
     assert calls["json"] == {"prefixes": ["results/j1/recap_final.mp4"]}
+
+
+@needs_ffmpeg
+def test_render_intro_outro_toggles(tmp_path):
+    # Intro/outro are individually switchable: disabling one drops only
+    # that card. Duration check: intro+outro = 2s + clips + 2s; with both
+    # off the output is just the clips (2s for the single highlight).
+    src = tmp_path / "src.mp4"
+    _make_source(src, with_audio=True)
+    agent = RenderingAgent(tmp_path / "results")
+    hl = [{"start": 0, "end": 2}]
+    tr = [{"start": 0, "end": 2, "text": "hi"}]
+    both = agent.render(src, hl, tr, "T", "j1", intro_text="Intro",
+                        outro_text="Thanks", intro_enabled=True,
+                        outro_enabled=True)
+    assert both.ok, both.errors
+    assert _duration(both.video_path) == pytest.approx(6.0, abs=0.6)
+    none = agent.render(src, hl, tr, "T", "j2", intro_text="Intro",
+                        outro_text="Thanks", intro_enabled=False,
+                        outro_enabled=False)
+    assert none.ok, none.errors
+    assert _duration(none.video_path) == pytest.approx(2.0, abs=0.6)
+    intro_only = agent.render(src, hl, tr, "T", "j3", intro_text="Intro",
+                              outro_text="Thanks", intro_enabled=True,
+                              outro_enabled=False)
+    assert intro_only.ok, intro_only.errors
+    assert _duration(intro_only.video_path) == pytest.approx(4.0, abs=0.6)
+
+
+def test_persist_ingestion_stores_intro_outro_flags():
+    from backend.agents.agent01_ingestion import IngestionResult, persist_ingestion
+    from backend.database import Job, Video
+
+    # persist_ingestion needs a DB session; reuse the sqlite helper shape
+    # from the fair-use tests via an in-memory engine.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.database import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    db.add(__import__("backend.database", fromlist=["User"]).User(
+        id="u1", email="u1@dev.local"))
+    db.commit()
+    res = IngestionResult(
+        ok=True, job_id="j1", video_id="v1", container="mp4",
+        metadata={"original_name": "a.mp4", "duration_sec": 10.0,
+                  "size_bytes": 100, "sha256_prefix": "ab"})
+    persist_ingestion(db, res, user_id="u1",
+                      storage_path="uploads/v1/original.mp4",
+                      intro_enabled=False, outro_enabled=True)
+    db.commit()
+    video = db.query(Video).filter_by(id="v1").one()
+    assert video.meta["intro_enabled"] is False
+    assert video.meta["outro_enabled"] is True

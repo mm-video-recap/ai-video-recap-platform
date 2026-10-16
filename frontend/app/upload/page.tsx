@@ -41,6 +41,8 @@ function UploadContent() {
   const [summaryLang, setSummaryLang] = useState<"my" | "en">(prefs.defaultLanguage as "my" | "en");
   const [subtitleLang, setSubtitleLang] = useState<Lang>(prefs.defaultLanguage as "my" | "en");
   const [recapStyle, setRecapStyle] = useState(prefs.summaryStyle);
+  const [introEnabled, setIntroEnabled] = useState(true);
+  const [outroEnabled, setOutroEnabled] = useState(true);
 
   // Read video duration from file metadata for the time estimate.
   useEffect(() => {
@@ -102,6 +104,8 @@ function UploadContent() {
           output_lang: summaryLang,
           subtitle_language: subtitleLang,
           recap_style: recapStyle,
+          intro_enabled: String(introEnabled),
+          outro_enabled: String(outroEnabled),
         }
       );
       toast(t("upload.success"), "success");
@@ -132,6 +136,30 @@ function UploadContent() {
         </button>
       ))}
     </div>
+  );
+
+  const toggleRow = (label: string, value: boolean, onChange: (v: boolean) => void) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left"
+    >
+      <span className="text-sm font-semibold">{label}</span>
+      <span
+        aria-hidden
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+          value ? "bg-gradient-to-r from-blue-600 to-violet-600" : "bg-[var(--border)]"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+            value ? "left-[22px]" : "left-0.5"
+          }`}
+        />
+      </span>
+    </button>
   );
 
   return (
@@ -174,6 +202,13 @@ function UploadContent() {
                   <p className="mt-2 text-xs text-[var(--muted)]">
                     {t(`upload.stylesDesc.${recapStyle}`)}
                   </p>
+                </div>
+                <div>
+                  <span className="label-text">{t("upload.introOutro")}</span>
+                  <div className="space-y-3">
+                    {toggleRow(t("upload.introEnabled"), introEnabled, setIntroEnabled)}
+                    {toggleRow(t("upload.outroEnabled"), outroEnabled, setOutroEnabled)}
+                  </div>
                 </div>
               </div>
             </Card>

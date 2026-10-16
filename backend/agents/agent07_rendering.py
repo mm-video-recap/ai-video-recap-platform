@@ -130,7 +130,9 @@ class RenderingAgent:
     def render(self, normalized_path: str | Path, highlights: list[dict],
                transcript: list[dict], title: str, job_id: str,
                intro_text: str | None = None,
-               outro_text: str | None = None) -> RenderResult:
+               outro_text: str | None = None,
+               intro_enabled: bool = True,
+               outro_enabled: bool = True) -> RenderResult:
         res = RenderResult(ok=False, job_id=job_id)
         src = Path(normalized_path)
         try:
@@ -173,8 +175,8 @@ class RenderingAgent:
 
             # 2) concat (+ optional title cards)
             parts: list[Path] = []
-            intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio) if intro_text or title else None
-            outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio) if outro_text else None
+            intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio) if (intro_enabled and (intro_text or title)) else None
+            outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio) if (outro_enabled and outro_text) else None
             if intro:
                 parts.append(intro)
             parts.extend(clips)

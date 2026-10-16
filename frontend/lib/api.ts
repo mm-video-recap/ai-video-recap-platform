@@ -113,14 +113,18 @@ export function uploadVideo(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     // Backend reads the recap preferences from QUERY params
-    // (routes_videos.upload: output_lang, subtitle_language, recap_style).
+    // (routes_videos.upload: output_lang, subtitle_language, recap_style,
+    // intro_enabled, outro_enabled).
     // Any other keys in `extra` are sent as form fields (ignored by backend).
-    const { output_lang, subtitle_language, recap_style, ...formExtra } =
+    const { output_lang, subtitle_language, recap_style,
+            intro_enabled, outro_enabled, ...formExtra } =
       extra ?? {};
     const qs = new URLSearchParams();
     if (output_lang) qs.set("output_lang", output_lang);
     if (subtitle_language) qs.set("subtitle_language", subtitle_language);
     if (recap_style) qs.set("recap_style", recap_style);
+    if (intro_enabled !== undefined) qs.set("intro_enabled", intro_enabled);
+    if (outro_enabled !== undefined) qs.set("outro_enabled", outro_enabled);
     const qsStr = qs.toString();
     xhr.open(
       "POST",

@@ -304,7 +304,7 @@ def ai_analyze(self, job_id: str):
 def render_recap(self, job_id: str):
     """Agent07: cut/concat highlights, subtitles, intro/outro, export MP4."""
     from backend.config import get_settings  # noqa: PLC0415
-    from backend.database import Job, Output  # noqa: PLC0415
+    from backend.database import Job, Output, Video  # noqa: PLC0415
 
     db = _db()
     try:
@@ -324,11 +324,20 @@ def render_recap(self, job_id: str):
 
         from backend.agents.agent07_rendering import RenderingAgent  # noqa: PLC0415
         renderer = RenderingAgent(Path(settings.STORAGE_ROOT) / "results")
+        # Intro/outro toggles live in video.meta (see persist_ingestion);
+        # missing keys mean "enabled" (backward compat for older jobs).
+        video = db.query(Video).filter_by(id=job.video_id).one_or_none()
+        prefs = (video.meta or {}) if video is not None else {}
+        intro_enabled = prefs.get("intro_enabled", True)
+        outro_enabled = prefs.get("outro_enabled", True)
         result = renderer.render(
             proc.get("normalized_path"), highlights, transcript,
             summary.get("title", "Video Recap"), job_id,
-            intro_text=summary.get("title"),
-            outro_text="Thanks for watching — AI Video Recap")
+            intro_text=summary.get("title") if intro_enabled else None,
+            outro_text=("Thanks for watching — AI Video Recap"
+                        if outro_enabled else None),
+            intro_enabled=bool(intro_enabled),
+            outro_enabled=bool(outro_enabled))
 
         if not result.ok:
             msg = "; ".join(result.errors) or "render failed"

@@ -238,6 +238,8 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       storage_path: str, output_lang: str = "en",
                       subtitle_language: str = "my",
                       recap_style: str = "detailed",
+                      intro_enabled: bool = True,
+                      outro_enabled: bool = True,
                       priority: int = 3) -> tuple:
     """
     Create the Video + Job rows for a successful ingestion.
@@ -267,6 +269,11 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
               if k not in {"original_name", "size_bytes", "duration_sec",
                            "width", "height", "sha256_prefix", "user_id"}},
     )
+    # Intro/outro toggles live in video.meta (JSON) so no schema
+    # migration is needed; missing keys mean "enabled" (backward compat).
+    video.meta = {**(video.meta or {}),
+                  "intro_enabled": bool(intro_enabled),
+                  "outro_enabled": bool(outro_enabled)}
     job = Job(
         id=result.job_id,
         video_id=result.video_id,

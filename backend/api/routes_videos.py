@@ -57,6 +57,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
                                                pattern="^(my|en|none)$"),
                  recap_style: str = Query(default="detailed",
                                           pattern="^(concise|detailed|highlights)$"),
+                 intro_enabled: bool = Query(default=True),
+                 outro_enabled: bool = Query(default=True),
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     settings = get_settings()
@@ -127,6 +129,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
             output_lang=output_lang,
             subtitle_language=subtitle_language,
             recap_style=recap_style,
+            intro_enabled=intro_enabled,
+            outro_enabled=outro_enabled,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)
         db.commit()
         log_event(db, user.id, "video_uploaded",

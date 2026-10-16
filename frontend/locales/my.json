@@ -504,6 +504,9 @@
       "uploadFailed": "တင်မှု မအောင်မြင်ပါ။ ချိတ်ဆက်မှုစစ်ပြီး ထပ်ကြိုးစားပါ။"
     },
     "estimateTitle": "ခန့်မှန်း လုပ်ဆောင်ချိန်",
+    "introOutro": "အစ / အဆုံး ကတ်",
+    "introEnabled": "အစ ကတ် (Intro) ထည့်ရန်",
+    "outroEnabled": "အဆုံး ကတ် (Outro) ထည့်ရန်",
     "estimatedTime": "{minutes} မိနစ်ခန့်",
     "estimatedTimeShort": "၁ မိနစ်အောက်",
     "langEn": "အင်္ဂလိပ်",
