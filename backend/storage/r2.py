@@ -65,3 +65,9 @@ class R2Storage(StorageBackend):
             return True
         except Exception:
             return False
+
+    def download(self, key: str, local_path: str | Path) -> Path:
+        target = Path(local_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self._client.download_file(self._bucket_for(key), key, str(target))
+        return target

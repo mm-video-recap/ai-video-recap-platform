@@ -59,6 +59,36 @@ def get_storage() -> StorageBackend:
     return build_storage()
 
 
+def ensure_local(storage_path: str, video_id: str) -> Path:
+    """Return a local filesystem Path for a stored upload.
+
+    - Local provider: `storage_path` is already an absolute local path —
+      returned as-is.
+    - Cloud providers (supabase/r2): `storage_path` is a storage KEY —
+      download it once to the local cache
+      ``<STORAGE_ROOT>/uploads/<video_id>/original<ext>`` and return that
+      path. Reuses the cached copy when it already exists.
+
+    This is what makes multi-container deploys work: the API uploads to
+    shared storage, and the worker materializes the file locally before
+    FFmpeg reads it. Live incident 2026-10-16: with local storage the
+    worker looked for /app/storage/... on ITS OWN filesystem and every
+    job failed at ingest with "uploaded file missing".
+    """
+    from pathlib import Path as _Path  # noqa: PLC0415 - local import, manager is hot
+
+    candidate = _Path(storage_path or "")
+    if candidate.is_absolute() and candidate.exists():
+        return candidate
+    settings = get_settings()
+    key = (storage_path or "").lstrip("/")
+    ext = _Path(key).suffix or ".mp4"
+    target = _Path(settings.STORAGE_ROOT) / "uploads" / video_id / f"original{ext}"
+    if target.exists() and target.stat().st_size > 0:
+        return target
+    return get_storage().download(key, target)
+
+
 def reset_storage_cache() -> None:
     get_storage.cache_clear()
 

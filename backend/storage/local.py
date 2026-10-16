@@ -61,5 +61,13 @@ class LocalStorage(StorageBackend):
     def exists(self, key: str) -> bool:
         return self._resolve(key).exists()
 
+    def download(self, key: str, local_path: str | Path) -> Path:
+        target = Path(local_path)
+        source = self._resolve(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.resolve() != source:
+            shutil.copyfile(source, target)
+        return target
+
     def absolute(self, key: str) -> Path:
         return self._resolve(key)

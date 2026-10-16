@@ -70,3 +70,14 @@ class SupabaseStorage(StorageBackend):
             return resp.status_code == 200
         except Exception:
             return False
+
+    def download(self, key: str, local_path: str | Path) -> Path:
+        target = Path(local_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with httpx.stream("GET", self._obj_url(key), headers=self._headers,
+                          timeout=300) as resp:
+            resp.raise_for_status()
+            with target.open("wb") as fh:
+                for chunk in resp.iter_bytes(1024 * 1024):
+                    fh.write(chunk)
+        return target

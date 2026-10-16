@@ -19,6 +19,15 @@ class StorageBackend(ABC):
         """Public/download URL for a stored key."""
 
     @abstractmethod
+    def download(self, key: str, local_path: str | Path) -> Path:
+        """Download `key` to `local_path` (creating parents). Returns the path.
+
+        Required for multi-container deploys: the API container uploads to
+        shared storage, and the worker container must materialize the
+        file locally before FFmpeg can read it.
+        """
+
+    @abstractmethod
     def delete(self, key: str) -> None:
         """Delete a stored key (best effort)."""
 

@@ -114,8 +114,18 @@ def ingest_video(self, video_id: str, job_id: str):
             return
         set_job_progress(db, job_id, stage="ingesting", progress=5.0,
                          message="Validating upload…", status="processing")
-        path = Path(video.storage_path or "")
-        if not path.exists():
+        # Multi-container: with cloud storage the DB holds a storage KEY,
+        # not a local path — materialize it locally first (no-op when the
+        # file is already on this filesystem).
+        from backend.storage import ensure_local  # noqa: PLC0415
+        try:
+            local_path = ensure_local(video.storage_path or "", video_id)
+        except Exception as exc:
+            _fail_job(db, job_id, "ingesting",
+                      f"uploaded file missing: {video.storage_path} ({exc})",
+                      user_id=job.user_id)
+            return
+        if not local_path.exists():
             _fail_job(db, job_id, "ingesting", f"uploaded file missing: {video.storage_path}",
                       user_id=job.user_id)
             return
@@ -156,7 +166,12 @@ def process_video(self, job_id: str):
         from backend.agents.agent02_processing import ProcessingAgent  # noqa: PLC0415
         settings = get_settings()
         agent = ProcessingAgent(Path(settings.STORAGE_ROOT) / "processing")
-        result = agent.process(video.storage_path, job_id)
+        # Resolve the input to a local file first: with cloud storage the
+        # DB holds a storage KEY, not a path (ingest already materialized
+        # it, so this is normally a cache hit).
+        from backend.storage import ensure_local  # noqa: PLC0415
+        input_path = ensure_local(video.storage_path or "", video.id)
+        result = agent.process(str(input_path), job_id)
         if not result.ok:
             msg = "; ".join(result.errors) or "processing failed"
             if self.request.retries < self.max_retries:
