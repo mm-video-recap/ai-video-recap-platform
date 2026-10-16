@@ -404,6 +404,20 @@ def render_recap(self, job_id: str):
         prefs = (video.meta or {}) if video is not None else {}
         intro_enabled = prefs.get("intro_enabled", True)
         outro_enabled = prefs.get("outro_enabled", True)
+        voice_mode = prefs.get("voice_mode", "original")
+        narration_text = ""
+        tts_kwargs: dict = {}
+        if voice_mode == "tts":
+            # Narration = the recap summary in the recap language.
+            narration_text = (summary.get("summary_short")
+                              or summary.get("description") or "")
+            tts_kwargs = {
+                "tts_provider": prefs.get("tts_provider", "edge"),
+                "tts_voice": prefs.get("tts_voice", "thiha"),
+                "tts_rate": float(prefs.get("tts_rate", 1.0) or 1.0),
+                "tts_pitch": int(prefs.get("tts_pitch", 0) or 0),
+                "settings": settings,
+            }
         result = renderer.render(
             proc.get("normalized_path"), highlights, transcript,
             summary.get("title", "Video Recap"), job_id,
@@ -411,7 +425,9 @@ def render_recap(self, job_id: str):
             outro_text=("Thanks for watching — AI Video Recap"
                         if outro_enabled else None),
             intro_enabled=bool(intro_enabled),
-            outro_enabled=bool(outro_enabled))
+            outro_enabled=bool(outro_enabled),
+            narration_text=narration_text or None,
+            **tts_kwargs)
 
         if not result.ok:
             msg = "; ".join(result.errors) or "render failed"

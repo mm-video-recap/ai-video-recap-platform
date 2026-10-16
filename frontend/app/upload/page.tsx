@@ -16,6 +16,9 @@ import {
   getExtension,
   loadPreferences,
   loadTranscriptionPrefs,
+  loadVoicePrefs,
+  saveVoicePrefs,
+  type VoicePrefs,
 } from "@/lib/utils";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
@@ -44,6 +47,22 @@ function UploadContent() {
   const [recapStyle, setRecapStyle] = useState(prefs.summaryStyle);
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
+  const [voice, setVoice] = useState<VoicePrefs>(() => loadVoicePrefs());
+
+  const updateVoice = (patch: Partial<VoicePrefs>) => {
+    setVoice((prev) => {
+      const next = { ...prev, ...patch };
+      // Edge voices are Thiha/Nilar; Gemini voices are the 8 named ones.
+      if (patch.ttsProvider === "edge" && !["thiha", "nilar"].includes(next.ttsVoice)) {
+        next.ttsVoice = "thiha";
+      }
+      if (patch.ttsProvider === "gemini" && ["thiha", "nilar"].includes(next.ttsVoice)) {
+        next.ttsVoice = "Kore";
+      }
+      saveVoicePrefs(next);
+      return next;
+    });
+  };
 
   // Read video duration from file metadata for the time estimate.
   useEffect(() => {
@@ -107,6 +126,12 @@ function UploadContent() {
           recap_style: recapStyle,
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
+          // Voiceover (TTS narration) prefs from this page.
+          voice_mode: voice.voiceMode,
+          tts_provider: voice.ttsProvider,
+          tts_voice: voice.ttsVoice,
+          tts_rate: String(voice.ttsRate),
+          tts_pitch: String(voice.ttsPitch),
           // Transcription choice from Settings (BYOK): provider as a query
           // param, the key as a form field (never in the URL).
           ...(() => {
@@ -219,6 +244,58 @@ function UploadContent() {
                     {toggleRow(t("upload.introEnabled"), introEnabled, setIntroEnabled)}
                     {toggleRow(t("upload.outroEnabled"), outroEnabled, setOutroEnabled)}
                   </div>
+                </div>
+                <div>
+                  <span className="label-text">{t("upload.voiceTitle")}</span>
+                  {segmented(voice.voiceMode, (v) => updateVoice({ voiceMode: v as "original" | "tts" }), [
+                    { value: "original", label: t("upload.voiceOriginal") },
+                    { value: "tts", label: t("upload.voiceTts") },
+                  ])}
+                  {voice.voiceMode === "tts" && (
+                    <div className="mt-3 space-y-3">
+                      {segmented(voice.ttsProvider, (v) => updateVoice({ ttsProvider: v as "edge" | "gemini" }), [
+                        { value: "edge", label: "Edge TTS" },
+                        { value: "gemini", label: "Gemini" },
+                      ])}
+                      <div>
+                        <span className="label-text">{t("upload.ttsVoice")}</span>
+                        <select
+                          value={voice.ttsVoice}
+                          onChange={(e) => updateVoice({ ttsVoice: e.target.value })}
+                          className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                        >
+                          {voice.ttsProvider === "edge" ? (
+                            <>
+                              <option value="thiha">{t("upload.voiceThiha")}</option>
+                              <option value="nilar">{t("upload.voiceNilar")}</option>
+                            </>
+                          ) : (
+                            ["Kore", "Charon", "Zephyr", "Puck", "Leda", "Fenrir", "Callirrhoe", "Autonoe"].map((v) => (
+                              <option key={v} value={v}>{v}</option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <span className="label-text">{t("upload.ttsRate", { rate: voice.ttsRate.toFixed(2) })}</span>
+                        <input
+                          type="range" min={0.8} max={1.3} step={0.05} value={voice.ttsRate}
+                          onChange={(e) => updateVoice({ ttsRate: Number(e.target.value) })}
+                          className="w-full"
+                          aria-label={t("upload.ttsRate", { rate: voice.ttsRate.toFixed(2) })}
+                        />
+                      </div>
+                      <div>
+                        <span className="label-text">{t("upload.ttsPitch", { pitch: voice.ttsPitch })}</span>
+                        <input
+                          type="range" min={-10} max={10} step={1} value={voice.ttsPitch}
+                          onChange={(e) => updateVoice({ ttsPitch: Number(e.target.value) })}
+                          className="w-full"
+                          aria-label={t("upload.ttsPitch", { pitch: voice.ttsPitch })}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

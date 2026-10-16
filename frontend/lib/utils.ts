@@ -123,6 +123,48 @@ export function saveTranscriptionPrefs(provider: TranscriptionProvider, key: str
   window.localStorage.setItem("recap_transcription", JSON.stringify({ provider, key }));
 }
 
+/** Voiceover (TTS narration) preferences, stored in localStorage only. */
+export type VoiceMode = "original" | "tts";
+export type TtsProvider = "edge" | "gemini";
+
+export interface VoicePrefs {
+  voiceMode: VoiceMode;
+  ttsProvider: TtsProvider;
+  ttsVoice: string;
+  ttsRate: number;
+  ttsPitch: number;
+}
+
+export function loadVoicePrefs(): VoicePrefs {
+  const defaults: VoicePrefs = {
+    voiceMode: "original",
+    ttsProvider: "edge",
+    ttsVoice: "thiha",
+    ttsRate: 1.0,
+    ttsPitch: 0,
+  };
+  try {
+    const raw = window.localStorage.getItem("recap_voice");
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        voiceMode: p.voiceMode === "tts" ? "tts" : "original",
+        ttsProvider: p.ttsProvider === "gemini" ? "gemini" : "edge",
+        ttsVoice: typeof p.ttsVoice === "string" && p.ttsVoice ? p.ttsVoice : "thiha",
+        ttsRate: typeof p.ttsRate === "number" && p.ttsRate >= 0.5 && p.ttsRate <= 2 ? p.ttsRate : 1.0,
+        ttsPitch: typeof p.ttsPitch === "number" && p.ttsPitch >= -20 && p.ttsPitch <= 20 ? p.ttsPitch : 0,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return defaults;
+}
+
+export function saveVoicePrefs(prefs: VoicePrefs) {
+  window.localStorage.setItem("recap_voice", JSON.stringify(prefs));
+}
+
 /** Canonical processing stage keys, in pipeline order. */
 export const STAGE_ORDER = [
   "upload",

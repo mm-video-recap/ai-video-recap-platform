@@ -140,6 +140,20 @@ class RenderingAgent:
         except Exception:
             return True
 
+    def _duration(self, path: Path) -> float | None:
+        """Media duration in seconds via ffprobe; None when unavailable."""
+        ffprobe = shutil.which("ffprobe")
+        if not ffprobe:
+            return None
+        try:
+            proc = subprocess.run(
+                [ffprobe, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=30, check=False)
+            return float((proc.stdout or "").strip())
+        except Exception:
+            return None
+
     def _title_card(self, workdir: Path, text: str, name: str,
                     w: int = 1280, h: int = 720, has_audio: bool = True) -> Path | None:
         """2-second title card; returns path or None if drawtext unavailable.
@@ -172,7 +186,13 @@ class RenderingAgent:
                intro_text: str | None = None,
                outro_text: str | None = None,
                intro_enabled: bool = True,
-               outro_enabled: bool = True) -> RenderResult:
+               outro_enabled: bool = True,
+               narration_text: str | None = None,
+               tts_provider: str = "edge",
+               tts_voice: str = "thiha",
+               tts_rate: float = 1.0,
+               tts_pitch: int = 0,
+               settings=None) -> RenderResult:
         res = RenderResult(ok=False, job_id=job_id)
         src = Path(normalized_path)
         try:
@@ -231,6 +251,35 @@ class RenderingAgent:
             if p.returncode != 0 or not joined.exists():
                 res.errors.append(f"concat failed: {p.stderr[-300:]}")
                 return res
+
+            # 2b) TTS narration (optional): replace the audio track with a
+            # synthesized reading of the recap summary, fitted to the
+            # recap duration. TTS failure NEVER fails the render — the
+            # original audio is kept and a warning is recorded.
+            if narration_text and narration_text.strip():
+                try:
+                    from backend.agents.agent_tts import (  # noqa: PLC0415
+                        fit_narration_to_duration, replace_audio,
+                        synthesize_narration, validate_tts_prefs)
+                    validate_tts_prefs(tts_provider, tts_voice, tts_rate, tts_pitch)
+                    narrated = synthesize_narration(
+                        narration_text, tts_provider, tts_voice, tts_rate,
+                        tts_pitch, workdir, settings=settings)
+                    if narrated is not None:
+                        target = self._duration(joined)
+                        fitted = fit_narration_to_duration(narrated, target, workdir) if target else None
+                        narrated_video = workdir / "joined_narrated.mp4"
+                        if replace_audio(joined, fitted or narrated, narrated_video):
+                            joined = narrated_video
+                            res.warnings.append(
+                                f"narration: {tts_provider}/{tts_voice}")
+                        else:
+                            res.warnings.append("narration audio replace failed; kept original audio")
+                    else:
+                        res.warnings.append("narration synthesis failed; kept original audio")
+                except Exception as exc:
+                    log.warning("tts narration skipped job=%s: %s", job_id, exc)
+                    res.warnings.append(f"narration skipped: {exc}")
 
             # 3) subtitles — remapped to the recap timeline (intro + clips
             # + outro), NOT the original timeline.

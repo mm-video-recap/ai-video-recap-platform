@@ -26,6 +26,7 @@ redis==5.3.1
 
 # HTTP (AI providers, storage, email) — no heavy vendor SDKs required
 httpx==0.28.1
+edge-tts==7.3.1  # TTS narration (Thiha/Nilar Myanmar voices), no key needed
 
 # Cloud storage (optional backends; imported lazily)
 boto3==1.43.113

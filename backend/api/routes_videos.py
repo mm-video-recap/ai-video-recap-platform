@@ -64,6 +64,15 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  # Per-user (BYOK) transcription key: a FORM field, never a
                  # query param — query strings land in access logs.
                  transcription_key: str = Form(default=""),
+                 # Voiceover: "original" keeps the source audio; "tts"
+                 # replaces it with synthesized narration of the recap.
+                 voice_mode: str = Query(default="original",
+                                         pattern="^(original|tts)$"),
+                 tts_provider: str = Query(default="edge",
+                                           pattern="^(edge|gemini)$"),
+                 tts_voice: str = Query(default="thiha"),
+                 tts_rate: float = Query(default=1.0, ge=0.5, le=2.0),
+                 tts_pitch: int = Query(default=0, ge=-20, le=20),
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     settings = get_settings()
@@ -140,6 +149,15 @@ def upload_video(request: Request, file: UploadFile = File(...),
             except RuntimeError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
 
+        # TTS narration prefs: validate the voice now (400) rather than
+        # silently falling back to original audio at render time.
+        if voice_mode == "tts":
+            from backend.agents.agent_tts import validate_tts_prefs  # noqa: PLC0415
+            try:
+                validate_tts_prefs(tts_provider, tts_voice, tts_rate, tts_pitch)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
         video, job = persist_ingestion(
             db, result, user_id=user.id, storage_path=stored_path,
             output_lang=output_lang,
@@ -149,6 +167,11 @@ def upload_video(request: Request, file: UploadFile = File(...),
             outro_enabled=outro_enabled,
             transcription_provider=transcription_provider,
             transcription_key_enc=transcription_key_enc,
+            voice_mode=voice_mode,
+            tts_provider=tts_provider,
+            tts_voice=tts_voice,
+            tts_rate=tts_rate,
+            tts_pitch=tts_pitch,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)
         db.commit()
         log_event(db, user.id, "video_uploaded",
