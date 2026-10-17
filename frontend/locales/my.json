@@ -440,6 +440,8 @@
     "shortSummary": "အတို အကျဉ်းချုပ်",
     "summaryTitle": "AI အကျဉ်းချုပ်",
     "notices": "မှတ်ချက်",
+    "quotaWarningBody": "ဒီ job ရဲ့ AI အထွက် အချို့ (အကျဉ်းချုပ် / ဘာသာပြန် / စာသားမှတ်တမ်း) က quota ကုန်လို့ မရခဲ့ဘူး။ ခဏစောင့်ပြီး ပြန်စမ်းပါ၊ ဒါမှမဟုတ် ကိုယ့် key ကို စစ်ပါ။",
+    "quotaWarningTitle": "AI Quota ကုန်သွားပြီ",
     "transcript": "စာသားမှတ်တမ်း"
   },
   "settings": {
@@ -470,6 +472,8 @@
     "keyValid": "Key မှန်တယ် ✅",
     "keyVerify": "Key ကို စစ်မယ်",
     "keyVerifying": "စစ်နေတယ်…",
+    "quotaWarningLabel": "Quota ကုန်ရင် သတိပေးမယ်",
+    "quotaWarningDesc": "AI quota ကုန်လို့ အကျဉ်းချုပ်/ဘာသာပြန် မရတဲ့အခါ ရလဒ်စာမျက်နှာမှာ သတိပေးချက် ပြမယ်။",
     "title": "ဆက်တင်များ"
   },
   "sidebar": {

@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { useLiveJobId } from "@/hooks/useLiveJobId";
 import { getResult, postFeedback } from "@/lib/api";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, loadQuotaWarningEnabled } from "@/lib/utils";
 import type { RecapResult } from "@/lib/types";
 import VideoPlayer from "@/components/VideoPlayer";
 import Button from "@/components/Button";
@@ -52,6 +52,14 @@ function ResultContent() {
 
   const [seekTo, setSeekTo] = useState(0);
   const [playerKey, setPlayerKey] = useState(0);
+
+  // Quota-warning option (Settings toggle, default ON): when the job's
+  // AI output is incomplete because provider quota ran out, show a
+  // banner saying so instead of silently empty output.
+  const [quotaWarningEnabled, setQuotaWarningEnabled] = useState(true);
+  useEffect(() => {
+    setQuotaWarningEnabled(loadQuotaWarningEnabled());
+  }, []);
 
   const load = async () => {
     if (!jobId) return;
@@ -180,6 +188,15 @@ function ResultContent() {
           🔗 {t("result.share")}
         </Button>
       </div>
+
+      {/* Quota warning — shown when the job hit provider quota
+          exhaustion and the user enabled the option in Settings. */}
+      {result.quota_exhausted && quotaWarningEnabled && (
+        <div className="mt-5 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+          <h3 className="mb-1 text-sm font-bold">🚨 {t("result.quotaWarningTitle")}</h3>
+          <p className="text-sm">{t("result.quotaWarningBody")}</p>
+        </div>
+      )}
 
       {/* Render notices (e.g. TTS fallback / failure) — surfaced so the
           user can see why the audio is original instead of narration. */}

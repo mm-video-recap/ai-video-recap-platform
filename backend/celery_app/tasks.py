@@ -363,6 +363,30 @@ def _contains_myanmar(text: str) -> bool:
     return any("\u1000" <= ch <= "\u109f" for ch in (text or ""))
 
 
+def _is_quota_error_text(text: str) -> bool:
+    """True when an error string signals provider quota exhaustion:
+    HTTP 429, the word 'quota', or 'keys exhausted'. Used to flag jobs
+    whose AI output is incomplete because quota ran out, so the result
+    page can warn instead of silently showing empty output."""
+    t = (text or "").lower()
+    return "429" in t or "quota" in t or "exhausted" in t
+
+
+def _job_hit_quota(prev: dict) -> bool:
+    """True when any stored AI-stage error signals quota exhaustion
+    (speech / summary / vision frame errors). Translation failures in
+    render are not separately tracked — they use the same provider
+    pool, so a quota wall there almost always shows up in these
+    earlier stages first."""
+    speech_err = (prev.get("speech", {}) or {}).get("error", "")
+    summary_err = (prev.get("summary", {}) or {}).get("error", "")
+    vision = prev.get("vision", {}) or {}
+    errs = [speech_err, summary_err, vision.get("error", "")]
+    errs += [f.get("error", "") for f in vision.get("frames", [])
+             if isinstance(f, dict)]
+    return any(_is_quota_error_text(e) for e in errs)
+
+
 def _translate_segments(settings, segments: list[dict], target_lang: str,
                         source_lang: str | None,
                         user_keys: dict[str, list[str]] | None = None) -> tuple[list[dict], bool]:
@@ -661,7 +685,12 @@ def render_recap(self, job_id: str,
                                       storage_path=tkey,
                                       size_bytes=Path(thumb).stat().st_size))
         db.add_all(outputs)
-        job.result = {**prev, "render": {
+        job.result = {**prev,
+                      # Quota-exhaustion flag: the result page shows a
+                      # quota warning banner (when the user enabled
+                      # that option) instead of silently empty output.
+                      "quota_exhausted": _job_hit_quota(prev),
+                      "render": {
             "video_key": video_key,
             "subtitle_mode": result.subtitle_mode,
             # Surface render warnings (e.g. TTS fallback / failure) in the

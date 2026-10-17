@@ -79,6 +79,7 @@ export interface RecapResult {
   transcript: TranscriptCue[];
   subtitle_url?: string | null;
   warnings?: string[];
+  quota_exhausted?: boolean;
 }
 
 export interface UploadResult {

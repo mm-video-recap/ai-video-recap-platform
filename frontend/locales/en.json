@@ -440,6 +440,8 @@
     "shortSummary": "Short summary",
     "summaryTitle": "AI Summary",
     "notices": "Notes",
+    "quotaWarningBody": "Some AI output for this job (summary / translation / transcript) is missing because provider quota ran out. Wait a while and try again, or check your own keys.",
+    "quotaWarningTitle": "AI quota ran out",
     "transcript": "Transcript"
   },
   "settings": {
@@ -470,6 +472,8 @@
     "keyValid": "Key is valid ✅",
     "keyVerify": "Verify this key",
     "keyVerifying": "Verifying…",
+    "quotaWarningLabel": "Warn me when quota runs out",
+    "quotaWarningDesc": "Show a warning on the result page when AI output is incomplete because provider quota ran out.",
     "title": "Settings"
   },
   "sidebar": {

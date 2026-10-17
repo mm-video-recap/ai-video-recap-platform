@@ -82,6 +82,7 @@ class ResultsResponse(BaseModel):
     transcript: list[TranscriptItem]
     subtitle_url: str | None
     warnings: list[str] = []
+    quota_exhausted: bool = False
 
 
 # ------------------------------------------------------------------ feedback / reports

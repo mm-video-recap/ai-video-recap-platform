@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
-import { loadPreferences, loadUserKeys, saveUserKeys } from "@/lib/utils";
+import { loadPreferences, loadQuotaWarningEnabled, loadUserKeys, saveQuotaWarningEnabled, saveUserKeys } from "@/lib/utils";
 import { verifyApiKey } from "@/lib/api";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
@@ -18,6 +18,7 @@ function SettingsContent() {
   const { user, getAccessToken } = useAuth();
   const { toast } = useToast();
   const [defaultLanguage, setDefaultLanguage] = useState<"my" | "en">("my");
+  const [quotaWarning, setQuotaWarning] = useState(true);
   const [geminiKey, setGeminiKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
   const [showGemini, setShowGemini] = useState(false);
@@ -34,6 +35,7 @@ function SettingsContent() {
     const uk = loadUserKeys();
     setGeminiKey(uk.geminiKey);
     setGroqKey(uk.groqKey);
+    setQuotaWarning(loadQuotaWarningEnabled());
   }, []);
 
   const save = () => {
@@ -42,6 +44,7 @@ function SettingsContent() {
         "recap_prefs",
         JSON.stringify({ defaultLanguage })
       );
+      saveQuotaWarningEnabled(quotaWarning);
       saveUserKeys({ geminiKey, groqKey });
       toast(t("settings.saved"), "success");
     } catch {
@@ -208,6 +211,30 @@ function SettingsContent() {
                 { value: "en", label: `🇬🇧 ${t("upload.langEn")}` },
               ])}
             </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={quotaWarning}
+              onClick={() => setQuotaWarning((v) => !v)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left"
+            >
+              <span>
+                <span className="block text-sm font-semibold">{t("settings.quotaWarningLabel")}</span>
+                <span className="mt-0.5 block text-xs text-[var(--muted)]">{t("settings.quotaWarningDesc")}</span>
+              </span>
+              <span
+                aria-hidden
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                  quotaWarning ? "bg-gradient-to-r from-blue-600 to-violet-600" : "bg-[var(--border)]"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    quotaWarning ? "left-[22px]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
             <Button onClick={save}>💾 {t("common.save")}</Button>
           </div>
         </Card>

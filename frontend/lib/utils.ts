@@ -99,6 +99,29 @@ export function loadPreferences(): { defaultLanguage: string } {
   return { defaultLanguage: "my" };
 }
 
+/** Quota-exhaustion warning option (Settings toggle, default ON):
+ * when a job's AI output is incomplete because provider quota ran out,
+ * the result page shows a warning banner. Stored in localStorage. */
+export function loadQuotaWarningEnabled(): boolean {
+  try {
+    const raw = window.localStorage.getItem("recap_quota_warning");
+    if (raw !== null) {
+      return JSON.parse(raw) !== false;
+    }
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+export function saveQuotaWarningEnabled(enabled: boolean) {
+  try {
+    window.localStorage.setItem("recap_quota_warning", JSON.stringify(enabled));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Per-user AI keys (BYOK) for EVERYTHING: transcription, summary,
  * vision, translation. ONE entry, in Settings.
  * Stored in localStorage ONLY — the browser is the only place keys
