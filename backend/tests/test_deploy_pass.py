@@ -99,7 +99,8 @@ def test_upload_persists_recap_prefs(client, auth_headers, make_mp4_bytes):
                     return_value=fake_meta):
         r = client.post(
             "/api/videos/upload?subtitle_language=none",
-            files=files, headers=headers)
+            files=files, headers=headers,
+            data={"gemini_key": "test-gemini", "groq_key": "test-groq"})
     assert r.status_code == 201, r.text
     job_id = r.json()["job_id"]
 

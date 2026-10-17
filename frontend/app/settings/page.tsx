@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { loadPreferences, loadUserKeys, saveUserKeys } from "@/lib/utils";
+import { verifyApiKey } from "@/lib/api";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
 import LanguageToggle from "@/components/LanguageToggle";
@@ -14,11 +15,16 @@ import Button from "@/components/Button";
 
 function SettingsContent() {
   const { t } = useT();
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const { toast } = useToast();
   const [defaultLanguage, setDefaultLanguage] = useState<"my" | "en">("my");
   const [geminiKey, setGeminiKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
+  const [showGemini, setShowGemini] = useState(false);
+  const [showGroq, setShowGroq] = useState(false);
+  type VerifyState = "idle" | "loading" | "ok" | "invalid" | "quota" | "error";
+  const [verifyGemini, setVerifyGemini] = useState<VerifyState>("idle");
+  const [verifyGroq, setVerifyGroq] = useState<VerifyState>("idle");
 
   useEffect(() => {
     const p = loadPreferences();
@@ -42,6 +48,114 @@ function SettingsContent() {
       toast(t("errors.generic"), "error");
     }
   };
+
+  // Verify ONE key against its provider (key sent in the JSON body,
+  // never stored, never logged). Works on the current field value
+  // even before Save.
+  const verifyOne = async (
+    provider: "gemini" | "groq",
+    key: string,
+    setState: (s: VerifyState) => void
+  ) => {
+    if (!key.trim()) {
+      toast(t("settings.keyEmpty"), "error");
+      return;
+    }
+    setState("loading");
+    try {
+      const token = await getAccessToken();
+      const res = await verifyApiKey(token, provider, key.trim());
+      if (res.valid && res.reason === "ok") setState("ok");
+      else if (res.valid && res.reason === "quota") setState("quota");
+      else if (!res.valid && res.reason === "invalid") setState("invalid");
+      else setState("error");
+    } catch {
+      setState("error");
+    }
+  };
+
+  // Delete ONE key: clear the field AND the browser-saved copy at once.
+  const deleteOne = (
+    provider: "gemini" | "groq",
+    setValue: (v: string) => void,
+    setState: (s: VerifyState) => void
+  ) => {
+    setValue("");
+    setState("idle");
+    const next = {
+      geminiKey: provider === "gemini" ? "" : geminiKey,
+      groqKey: provider === "groq" ? "" : groqKey,
+    };
+    saveUserKeys(next);
+    toast(t("settings.keyDeleted"), "success");
+  };
+
+  const verifyLabel = (s: VerifyState) => {
+    if (s === "loading") return t("settings.keyVerifying");
+    if (s === "ok") return `✅ ${t("settings.keyValid")}`;
+    if (s === "quota") return `⚠️ ${t("settings.keyQuota")}`;
+    if (s === "invalid") return `❌ ${t("settings.keyInvalid")}`;
+    if (s === "error") return `❌ ${t("settings.keyError")}`;
+    return "";
+  };
+
+  // One key field with its own three icons: show/hide, verify, delete.
+  const keyField = (
+    label: string,
+    placeholder: string,
+    value: string,
+    onChange: (v: string) => void,
+    shown: boolean,
+    onToggleShow: () => void,
+    verifyState: VerifyState,
+    onVerify: () => void,
+    onDelete: () => void
+  ) => (
+    <div>
+      <span className="label-text">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type={shown ? "text" : "password"}
+          autoComplete="off"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
+        />
+        <button
+          type="button"
+          onClick={onToggleShow}
+          title={shown ? t("settings.keyHide") : t("settings.keyShow")}
+          aria-label={shown ? t("settings.keyHide") : t("settings.keyShow")}
+          className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-base"
+        >
+          {shown ? "🙈" : "👁️"}
+        </button>
+        <button
+          type="button"
+          onClick={onVerify}
+          disabled={verifyState === "loading"}
+          title={t("settings.keyVerify")}
+          aria-label={t("settings.keyVerify")}
+          className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-base disabled:opacity-50"
+        >
+          ✓
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          title={t("settings.keyDelete")}
+          aria-label={t("settings.keyDelete")}
+          className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-base"
+        >
+          🗑️
+        </button>
+      </div>
+      {verifyState !== "idle" && (
+        <p className="mt-1.5 text-xs text-[var(--muted)]">{verifyLabel(verifyState)}</p>
+      )}
+    </div>
+  );
 
   const segmented = (
     value: string,
@@ -102,28 +216,28 @@ function SettingsContent() {
           <h2 className="text-lg font-bold">{t("settings.aiKeysTitle")}</h2>
           <p className="mb-5 mt-1 text-sm text-[var(--muted)]">{t("settings.aiKeysDesc")}</p>
           <div className="space-y-5">
-            <div>
-              <span className="label-text">{t("settings.aiKeysGemini")}</span>
-              <input
-                type="password"
-                autoComplete="off"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                placeholder={t("settings.aiKeysGeminiPlaceholder")}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <span className="label-text">{t("settings.aiKeysGroq")}</span>
-              <input
-                type="password"
-                autoComplete="off"
-                value={groqKey}
-                onChange={(e) => setGroqKey(e.target.value)}
-                placeholder={t("settings.aiKeysGroqPlaceholder")}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
-              />
-            </div>
+            {keyField(
+              t("settings.aiKeysGemini"),
+              t("settings.aiKeysGeminiPlaceholder"),
+              geminiKey,
+              (v) => { setGeminiKey(v); setVerifyGemini("idle"); },
+              showGemini,
+              () => setShowGemini((s) => !s),
+              verifyGemini,
+              () => verifyOne("gemini", geminiKey, setVerifyGemini),
+              () => deleteOne("gemini", setGeminiKey, setVerifyGemini)
+            )}
+            {keyField(
+              t("settings.aiKeysGroq"),
+              t("settings.aiKeysGroqPlaceholder"),
+              groqKey,
+              (v) => { setGroqKey(v); setVerifyGroq("idle"); },
+              showGroq,
+              () => setShowGroq((s) => !s),
+              verifyGroq,
+              () => verifyOne("groq", groqKey, setVerifyGroq),
+              () => deleteOne("groq", setGroqKey, setVerifyGroq)
+            )}
             <p className="text-xs text-[var(--muted)]">{t("settings.aiKeysHint")}</p>
             <Button onClick={save}>💾 {t("common.save")}</Button>
           </div>

@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from backend.api import routes_admin, routes_auth, routes_feedback, routes_jobs
-from backend.api import routes_results, routes_videos, routes_workers
+from backend.api import routes_keys, routes_results, routes_videos, routes_workers
 from backend.api.rate_limit import limiter
 from backend.config import get_settings
 
@@ -155,6 +155,7 @@ def readiness():
 
 
 app.include_router(routes_auth.router)
+app.include_router(routes_keys.router)
 app.include_router(routes_videos.router)
 app.include_router(routes_jobs.router)
 app.include_router(routes_results.router)

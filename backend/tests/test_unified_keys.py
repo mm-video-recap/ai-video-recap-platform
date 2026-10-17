@@ -229,7 +229,10 @@ def test_upload_forwards_user_keys_to_pipeline(client, auth_headers, make_mp4_by
         db.close()
 
 
-def test_upload_without_keys_enqueues_without_user_keys(client, auth_headers, make_mp4_bytes):
+def test_upload_without_keys_rejected_for_nonowner(client, auth_headers, make_mp4_bytes):
+    """Non-owner uploads without BOTH user keys are rejected (key gate);
+    the pipeline is never enqueued. Owner behaviour is covered in
+    test_key_management.py."""
     import uuid
 
     user = f"keys_{uuid.uuid4().hex[:8]}"
@@ -250,9 +253,8 @@ def test_upload_without_keys_enqueues_without_user_keys(client, auth_headers, ma
          mock.patch("backend.celery_app.tasks.enqueue_pipeline",
                     side_effect=_fake_enqueue):
         r = client.post("/api/videos/upload", files=files, headers=headers)
-    assert r.status_code == 201, r.text
-    assert seen["called"] is True
-    assert seen["user_keys"] is None
+    assert r.status_code == 400
+    assert seen["called"] is False
 
 
 def test_persist_ingestion_stores_no_key_material():
@@ -378,7 +380,9 @@ def test_job_response_has_no_recap_style(client, auth_headers, make_mp4_bytes):
                     return_value=fake_meta), \
          mock.patch("backend.celery_app.tasks.enqueue_pipeline",
                     return_value=True):
-        r = client.post("/api/videos/upload", files=files, headers=headers)
+        r = client.post("/api/videos/upload", files=files, headers=headers,
+                        data={"gemini_key": "test-gemini",
+                              "groq_key": "test-groq"})
     assert r.status_code == 201, r.text
     r = client.get(f"/api/jobs/{r.json()['job_id']}", headers=headers)
     assert r.status_code == 200

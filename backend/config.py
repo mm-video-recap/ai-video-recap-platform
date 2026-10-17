@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     # --- Admin users (comma-separated emails; matches Supabase JWT email) ---
     ADMIN_EMAILS: str = ""
 
+    # --- Owner account (ONE email). Only this account may use the
+    # server (env) AI keys. Everyone else MUST bring both their own
+    # Gemini + Groq keys — the upload endpoint enforces it. Set this
+    # to the owner's login email on the hosting provider.
+    OWNER_EMAIL: str = ""
+
     # --- Service token (machine-to-machine, e.g. n8n monitoring flow) ---
     # When set, Authorization: Bearer <RECAP_API_SERVICE_TOKEN> authenticates
     # as the service identity "service:n8n" (admin). The n8n monitoring flow
@@ -155,6 +161,11 @@ class Settings(BaseSettings):
     @property
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.ADMIN_EMAILS.split(",") if e.strip()}
+
+    def is_owner(self, email: str | None) -> bool:
+        """True only for the single owner account (OWNER_EMAIL)."""
+        return bool(self.OWNER_EMAIL and email
+                    and email.strip().lower() == self.OWNER_EMAIL.strip().lower())
 
     @field_validator("CORS_ORIGINS")
     @classmethod

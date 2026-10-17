@@ -4,6 +4,7 @@ export interface UserProfile {
   id: string;
   email: string;
   is_admin: boolean;
+  is_owner?: boolean;
   display_name: string;
 }
 

@@ -92,7 +92,9 @@ def uploaded(client, auth_headers, make_mp4_bytes):
                   "width": 640, "height": 360, "fps": 30.0}, True)
     with mock.patch("backend.agents.agent01_ingestion._ffprobe_metadata",
                     return_value=fake_meta):
-        r = client.post("/api/videos/upload", files=files, headers=headers)
+        r = client.post("/api/videos/upload", files=files, headers=headers,
+                        data={"gemini_key": "test-gemini",
+                              "groq_key": "test-groq"})
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["video_id"] and body["job_id"]

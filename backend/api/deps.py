@@ -152,6 +152,13 @@ def _today_utc() -> datetime:
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def is_owner(user: User) -> bool:
+    """True only for the single owner account (OWNER_EMAIL setting).
+    Only the owner may use the server (env) AI keys; everyone else
+    must bring both their own Gemini + Groq keys."""
+    return get_settings().is_owner(user.email)
+
+
 def check_fair_use(db: Session, user: User, settings: Settings,
                    estimated_seconds: float | None = None) -> None:
     """Enforce the free-tier fair-use caps. Raises 429 when exceeded."""

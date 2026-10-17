@@ -27,7 +27,8 @@ def test_me_unauthorized(client):
 
 def test_upload_bad_file_rejected(client, auth_headers):
     files = {"file": ("notes.txt", b"not a video" * 100, "text/plain")}
-    r = client.post("/api/videos/upload", files=files, headers=auth_headers("u2"))
+    r = client.post("/api/videos/upload", files=files, headers=auth_headers("u2"),
+                    data={"gemini_key": "g1", "groq_key": "q1"})
     assert r.status_code == 400
 
 

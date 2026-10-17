@@ -9,6 +9,7 @@ class MeResponse(BaseModel):
     id: str
     email: str | None
     is_admin: bool
+    is_owner: bool = False
     display_name: str | None
 
 
