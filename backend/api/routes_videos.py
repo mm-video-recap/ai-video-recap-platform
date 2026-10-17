@@ -55,19 +55,15 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  output_lang: str = Query(default="en", pattern="^(en|my)$"),
                  subtitle_language: str = Query(default="my",
                                                pattern="^(my|en|none)$"),
-                 recap_style: str = Query(default="detailed",
-                                          pattern="^(concise|detailed|highlights)$"),
                  intro_enabled: bool = Query(default=True),
                  outro_enabled: bool = Query(default=True),
-                 transcription_provider: str = Query(default="auto",
-                                                     pattern="^(auto|gemini|groq)$"),
-                 # Per-user (BYOK) transcription key: a FORM field, never a
-                 # query param — query strings land in access logs.
-                 transcription_key: str = Form(default=""),
-                 # Per-user (BYOK) AI keys for summary / vision /
-                 # translation: FORM fields, never query params. When
-                 # supplied, this job spends the user's own quota, never
-                 # the owner's. Empty = owner (env) keys, as before.
+                 # Per-user (BYOK) AI keys: FORM fields, never query
+                 # params — query strings land in access logs. They are
+                 # passed to the pipeline as task kwargs (in-memory
+                 # through the broker only) and NEVER written to the
+                 # database; the user's browser is the only place they
+                 # are saved. When supplied, this job spends the user's
+                 # own quota, never the owner's. Empty = owner keys.
                  gemini_key: str = Form(default=""),
                  groq_key: str = Form(default=""),
                  # Voiceover: "original" keeps the source audio; "tts"
@@ -148,29 +144,14 @@ def upload_video(request: Request, file: UploadFile = File(...),
         stored_path = storage_key if storage.name != "local" else str(
             storage.absolute(storage_key))  # type: ignore[attr-defined]
 
-        # Per-user transcription key: encrypt at rest (Fernet) before it
-        # touches the DB. Refuse outright when the server has no
-        # USER_KEY_ENCRYPTION_KEY — never store a plaintext key.
-        transcription_key_enc = ""
-        if transcription_key:
-            from backend.security.keyvault import encrypt_key  # noqa: PLC0415
-            try:
-                transcription_key_enc = encrypt_key(transcription_key)
-            except RuntimeError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
-
-        # Per-user AI keys: same encryption, same refusal.
-        gemini_key_enc = ""
-        groq_key_enc = ""
-        if gemini_key or groq_key:
-            from backend.security.keyvault import encrypt_key as _enc  # noqa: PLC0415
-            try:
-                if gemini_key:
-                    gemini_key_enc = _enc(gemini_key)
-                if groq_key:
-                    groq_key_enc = _enc(groq_key)
-            except RuntimeError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
+        # Per-user AI keys for this job only (see the Form fields
+        # above): collected here, passed to the pipeline as task kwargs,
+        # never persisted. Never logged.
+        user_keys: dict[str, list[str]] = {}
+        if gemini_key:
+            user_keys["gemini"] = [gemini_key]
+        if groq_key:
+            user_keys["groq"] = [groq_key]
 
         # TTS narration prefs: validate the voice now (400) rather than
         # silently falling back to original audio at render time.
@@ -185,13 +166,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
             db, result, user_id=user.id, storage_path=stored_path,
             output_lang=output_lang,
             subtitle_language=subtitle_language,
-            recap_style=recap_style,
             intro_enabled=intro_enabled,
             outro_enabled=outro_enabled,
-            transcription_provider=transcription_provider,
-            transcription_key_enc=transcription_key_enc,
-            gemini_key_enc=gemini_key_enc,
-            groq_key_enc=groq_key_enc,
             voice_mode=voice_mode,
             tts_provider=tts_provider,
             tts_voice=tts_voice,
@@ -206,7 +182,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
 
         # hand off to the celery pipeline (broker may be down -> stays queued)
         from backend.celery_app.tasks import enqueue_pipeline  # noqa: PLC0415
-        enqueue_pipeline(video.id, job.id, priority=job.priority)
+        enqueue_pipeline(video.id, job.id, priority=job.priority,
+                         user_keys=user_keys or None)
 
         estimated = max(60, int(float(duration) * 0.6) + 60)
         return UploadResponse(video_id=video.id, job_id=job.id,

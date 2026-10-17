@@ -48,7 +48,6 @@ class JobStatus(BaseModel):
     error: str | None
     # Upload-time recap preferences (persisted on the Job; see B15 fix).
     subtitle_language: str = "my"
-    recap_style: str = "detailed"
 
 
 # ------------------------------------------------------------------ results

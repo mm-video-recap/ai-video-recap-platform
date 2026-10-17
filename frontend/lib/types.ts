@@ -38,7 +38,6 @@ export interface JobStatus {
   error?: string | null;
   /** Upload-time recap preferences persisted on the backend Job. */
   subtitle_language?: string;
-  recap_style?: string;
 }
 
 export interface StreamEvent {
@@ -152,9 +151,6 @@ export interface ErrorLogItem {
 
 export type Locale = "my" | "en";
 
-export type RecapStyle = "concise" | "detailed" | "highlights";
-
 export interface RecapPreferences {
-  summaryStyle: RecapStyle;
   defaultLanguage: "my" | "en";
 }

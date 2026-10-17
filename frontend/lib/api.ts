@@ -113,11 +113,11 @@ export function uploadVideo(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     // Backend reads the recap preferences from QUERY params
-    // (routes_videos.upload: output_lang, subtitle_language, recap_style,
+    // (routes_videos.upload: output_lang, subtitle_language,
     // intro_enabled, outro_enabled).
     // Any other keys in `extra` are sent as form fields (ignored by backend).
-    const { output_lang, subtitle_language, recap_style,
-            intro_enabled, outro_enabled, transcription_provider,
+    const { output_lang, subtitle_language,
+            intro_enabled, outro_enabled,
             voice_mode, tts_provider, tts_voice, tts_rate, tts_pitch,
             intro_text, outro_text,
             ...formExtra } =
@@ -125,10 +125,8 @@ export function uploadVideo(
     const qs = new URLSearchParams();
     if (output_lang) qs.set("output_lang", output_lang);
     if (subtitle_language) qs.set("subtitle_language", subtitle_language);
-    if (recap_style) qs.set("recap_style", recap_style);
     if (intro_enabled !== undefined) qs.set("intro_enabled", intro_enabled);
     if (outro_enabled !== undefined) qs.set("outro_enabled", outro_enabled);
-    if (transcription_provider) qs.set("transcription_provider", transcription_provider);
     if (voice_mode) qs.set("voice_mode", voice_mode);
     if (tts_provider) qs.set("tts_provider", tts_provider);
     if (tts_voice) qs.set("tts_voice", tts_voice);
@@ -136,8 +134,8 @@ export function uploadVideo(
     if (tts_pitch !== undefined) qs.set("tts_pitch", tts_pitch);
     if (intro_text) qs.set("intro_text", intro_text);
     if (outro_text) qs.set("outro_text", outro_text);
-    // NOTE: transcription_key stays in formExtra -> FormData body, never
-    // in the URL (query strings land in access logs).
+    // NOTE: gemini_key / groq_key stay in formExtra -> FormData body,
+    // never in the URL (query strings land in access logs).
     const qsStr = qs.toString();
     xhr.open(
       "POST",

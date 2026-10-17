@@ -63,8 +63,7 @@ def get_job(job_id: str, user: User = Depends(get_current_user),
     job = _get_owned_job(db, job_id, user)
     return JobStatus(id=job.id, status=job.status, stage=job.stage,
                      progress=job.progress, error=job.error,
-                     subtitle_language=job.subtitle_language,
-                     recap_style=job.recap_style)
+                     subtitle_language=job.subtitle_language)
 
 
 @router.get("/{job_id}/stream")

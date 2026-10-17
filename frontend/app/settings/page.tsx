@@ -5,50 +5,38 @@ import { motion } from "framer-motion";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
-import { loadPreferences, loadTranscriptionPrefs, saveTranscriptionPrefs, loadAiKeys, saveAiKeys } from "@/lib/utils";
+import { loadPreferences, loadUserKeys, saveUserKeys } from "@/lib/utils";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
 import LanguageToggle from "@/components/LanguageToggle";
 import Card from "@/components/Card";
 import Button from "@/components/Button";
-import type { RecapStyle } from "@/lib/types";
-import type { TranscriptionProvider } from "@/lib/utils";
 
 function SettingsContent() {
   const { t } = useT();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [summaryStyle, setSummaryStyle] = useState<RecapStyle>("detailed");
   const [defaultLanguage, setDefaultLanguage] = useState<"my" | "en">("my");
-  const [transProvider, setTransProvider] = useState<TranscriptionProvider>("auto");
-  const [transKey, setTransKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
 
   useEffect(() => {
     const p = loadPreferences();
-    if (["concise", "detailed", "highlights"].includes(p.summaryStyle)) {
-      setSummaryStyle(p.summaryStyle as RecapStyle);
-    }
     if (p.defaultLanguage === "en" || p.defaultLanguage === "my") {
       setDefaultLanguage(p.defaultLanguage);
     }
-    const tp = loadTranscriptionPrefs();
-    setTransProvider(tp.provider);
-    setTransKey(tp.key);
-    const ak = loadAiKeys();
-    setGeminiKey(ak.geminiKey);
-    setGroqKey(ak.groqKey);
+    const uk = loadUserKeys();
+    setGeminiKey(uk.geminiKey);
+    setGroqKey(uk.groqKey);
   }, []);
 
   const save = () => {
     try {
       window.localStorage.setItem(
         "recap_prefs",
-        JSON.stringify({ summaryStyle, defaultLanguage })
+        JSON.stringify({ defaultLanguage })
       );
-      saveTranscriptionPrefs(transProvider, transKey);
-      saveAiKeys({ geminiKey, groqKey });
+      saveUserKeys({ geminiKey, groqKey });
       toast(t("settings.saved"), "success");
     } catch {
       toast(t("errors.generic"), "error");
@@ -100,50 +88,12 @@ function SettingsContent() {
           <p className="mb-5 mt-1 text-sm text-[var(--muted)]">{t("settings.prefsDesc")}</p>
           <div className="space-y-5">
             <div>
-              <span className="label-text">{t("settings.summaryStyleLabel")}</span>
-              {segmented(summaryStyle, (v) => setSummaryStyle(v as RecapStyle), [
-                { value: "concise", label: t("upload.styles.concise") },
-                { value: "detailed", label: t("upload.styles.detailed") },
-                { value: "highlights", label: t("upload.styles.highlights") },
-              ])}
-            </div>
-            <div>
               <span className="label-text">{t("settings.defaultLangLabel")}</span>
               {segmented(defaultLanguage, (v) => setDefaultLanguage(v as "my" | "en"), [
                 { value: "my", label: `🇲🇲 ${t("upload.langMy")}` },
                 { value: "en", label: `🇬🇧 ${t("upload.langEn")}` },
               ])}
             </div>
-            <Button onClick={save}>💾 {t("common.save")}</Button>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <h2 className="text-lg font-bold">{t("settings.transcriptionTitle")}</h2>
-          <p className="mb-5 mt-1 text-sm text-[var(--muted)]">{t("settings.transcriptionDesc")}</p>
-          <div className="space-y-5">
-            <div>
-              <span className="label-text">{t("settings.transcriptionProvider")}</span>
-              {segmented(transProvider, (v) => setTransProvider(v as TranscriptionProvider), [
-                { value: "auto", label: t("settings.transcriptionAuto") },
-                { value: "gemini", label: t("settings.transcriptionGemini") },
-                { value: "groq", label: t("settings.transcriptionGroq") },
-              ])}
-            </div>
-            {transProvider !== "auto" && (
-              <div>
-                <span className="label-text">{t("settings.transcriptionKey")}</span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={transKey}
-                  onChange={(e) => setTransKey(e.target.value)}
-                  placeholder={t("settings.transcriptionKeyPlaceholder")}
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
-                />
-                <p className="mt-2 text-xs text-[var(--muted)]">{t("settings.transcriptionKeyHint")}</p>
-              </div>
-            )}
             <Button onClick={save}>💾 {t("common.save")}</Button>
           </div>
         </Card>

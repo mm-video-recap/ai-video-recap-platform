@@ -15,8 +15,7 @@ import {
   formatDuration,
   getExtension,
   loadPreferences,
-  loadTranscriptionPrefs,
-  loadAiKeys,
+  loadUserKeys,
   loadVoicePrefs,
   saveVoicePrefs,
   type VoicePrefs,
@@ -45,7 +44,6 @@ function UploadContent() {
   const prefs = useMemo(() => loadPreferences(), []);
   const [summaryLang, setSummaryLang] = useState<"my" | "en">(prefs.defaultLanguage as "my" | "en");
   const [subtitleLang, setSubtitleLang] = useState<Lang>(prefs.defaultLanguage as "my" | "en");
-  const [recapStyle, setRecapStyle] = useState(prefs.summaryStyle);
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
   const [introText, setIntroText] = useState("");
@@ -122,11 +120,10 @@ function UploadContent() {
         token,
         (pct) => setProgress(pct),
         {
-          // output_lang / subtitle_language / recap_style are sent as query
-          // params (see lib/api.ts) and persisted on the backend Job.
+          // output_lang / subtitle_language are sent as query params
+          // (see lib/api.ts) and persisted on the backend Job.
           output_lang: summaryLang,
           subtitle_language: subtitleLang,
-          recap_style: recapStyle,
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
           intro_text: introText.trim(),
@@ -137,22 +134,14 @@ function UploadContent() {
           tts_voice: voice.ttsVoice,
           tts_rate: String(voice.ttsRate),
           tts_pitch: String(voice.ttsPitch),
-          // Transcription choice from Settings (BYOK): provider as a query
-          // param, the key as a form field (never in the URL).
+          // Per-user AI keys from Settings (one entry for everything):
+          // form fields, never in the URL. When set, this job spends
+          // the user's own quota.
           ...(() => {
-            const tp = loadTranscriptionPrefs();
+            const uk = loadUserKeys();
             return {
-              transcription_provider: tp.provider,
-              ...(tp.key ? { transcription_key: tp.key } : {}),
-            };
-          })(),
-          // Per-user AI keys from Settings (BYOK): form fields, never
-          // in the URL. When set, this job spends the user's own quota.
-          ...(() => {
-            const ak = loadAiKeys();
-            return {
-              ...(ak.geminiKey ? { gemini_key: ak.geminiKey } : {}),
-              ...(ak.groqKey ? { groq_key: ak.groqKey } : {}),
+              ...(uk.geminiKey ? { gemini_key: uk.geminiKey } : {}),
+              ...(uk.groqKey ? { groq_key: uk.groqKey } : {}),
             };
           })(),
         }
@@ -240,17 +229,6 @@ function UploadContent() {
                     { value: "en", label: `🇬🇧 ${t("upload.langEn")}` },
                     { value: "none", label: t("upload.langNone") },
                   ])}
-                </div>
-                <div>
-                  <span className="label-text">{t("upload.recapStyle")}</span>
-                  {segmented(recapStyle, setRecapStyle, [
-                    { value: "concise", label: t("upload.styles.concise") },
-                    { value: "detailed", label: t("upload.styles.detailed") },
-                    { value: "highlights", label: t("upload.styles.highlights") },
-                  ])}
-                  <p className="mt-2 text-xs text-[var(--muted)]">
-                    {t(`upload.stylesDesc.${recapStyle}`)}
-                  </p>
                 </div>
                 <div>
                   <span className="label-text">{t("upload.introOutro")}</span>

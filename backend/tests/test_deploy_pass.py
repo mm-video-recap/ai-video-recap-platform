@@ -4,7 +4,7 @@ Regression tests for the 2026-10-15 deploy pass. Each test pins one fix:
 1. CORS wildcard + credentials (B1/P0) — wildcards rejected, unlisted
    origins get no credentialed reflection.
 2. /ready endpoint — DB/Redis checks, no leaked internals.
-3. B15 — subtitle_language / recap_style persisted on the Job.
+3. B15 — subtitle_language persisted on the Job.
 4. B19 — upload size cap enforced before the whole file is written.
 5. Download URLs built from the request host, not localhost API_BASE_URL.
 6. Admin overview no longer exposes the absolute STORAGE_ROOT path.
@@ -98,7 +98,7 @@ def test_upload_persists_recap_prefs(client, auth_headers, make_mp4_bytes):
     with mock.patch("backend.agents.agent01_ingestion._ffprobe_metadata",
                     return_value=fake_meta):
         r = client.post(
-            "/api/videos/upload?subtitle_language=none&recap_style=highlights",
+            "/api/videos/upload?subtitle_language=none",
             files=files, headers=headers)
     assert r.status_code == 201, r.text
     job_id = r.json()["job_id"]
@@ -106,10 +106,9 @@ def test_upload_persists_recap_prefs(client, auth_headers, make_mp4_bytes):
     r = client.get(f"/api/jobs/{job_id}", headers=headers)
     assert r.status_code == 200
     assert r.json()["subtitle_language"] == "none"
-    assert r.json()["recap_style"] == "highlights"
 
 
-def test_upload_rejects_bad_recap_prefs(client, auth_headers, make_mp4_bytes):
+def test_upload_rejects_bad_subtitle_language(client, auth_headers, make_mp4_bytes):
     import uuid
 
     user = f"prefs_{uuid.uuid4().hex[:8]}"
@@ -118,17 +117,13 @@ def test_upload_rejects_bad_recap_prefs(client, auth_headers, make_mp4_bytes):
     r = client.post("/api/videos/upload?subtitle_language=xx",
                     files=files, headers=headers)
     assert r.status_code == 422
-    r = client.post("/api/videos/upload?recap_style=xx",
-                    files=files, headers=headers)
-    assert r.status_code == 422
 
 
-def test_upload_defaults_recap_prefs(client, uploaded):
+def test_upload_defaults_subtitle_language(client, uploaded):
     r = client.get(f"/api/jobs/{uploaded['job_id']}",
                    headers=uploaded["headers"])
     assert r.status_code == 200
     assert r.json()["subtitle_language"] == "my"
-    assert r.json()["recap_style"] == "detailed"
 
 
 # ------------------------------------------------------------------ 4. B19

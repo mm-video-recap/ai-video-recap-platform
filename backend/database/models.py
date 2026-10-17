@@ -102,9 +102,14 @@ class Job(Base):
     output_lang: Mapped[str] = mapped_column(String(8), default="en", nullable=False)
     # Upload-time recap preferences (frontend upload form): persisted so the
     # pipeline and the job view can honour/show them instead of silently
-    # dropping them. subtitle_language: my | en | none; recap_style:
-    # concise | detailed | highlights.
+    # dropping them. subtitle_language: my | en | none.
     subtitle_language: Mapped[str] = mapped_column(String(8), default="my", nullable=False)
+    # LEGACY, UNUSED: recap_style was removed from the product (no style
+    # selector anywhere; the recap format is fixed until a new spec
+    # lands). The column stays mapped because the database column is
+    # NOT NULL with no server default — dropping the attribute would
+    # make INSERTs fail — and dropping the column needs a migration
+    # the owner has not approved. Nothing reads or writes it.
     recap_style: Mapped[str] = mapped_column(String(32), default="detailed", nullable=False)
     result: Mapped[dict] = mapped_column(JsonCol, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

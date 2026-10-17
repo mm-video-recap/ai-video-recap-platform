@@ -75,19 +75,26 @@ def _fail_job(db, job_id: str, stage: str, message: str, user_id: str | None = N
     _notify_admins(f"Job {job_id} failed at {stage}", message)
 
 
-def _next(task_fn, job_id: str, priority: int) -> bool:
+def _next(task_fn, job_id: str, priority: int,
+         user_keys: dict[str, list[str]] | None = None) -> bool:
     """Enqueue the next pipeline stage honoring priority routing.
 
     Best-effort like enqueue_pipeline(): when the broker is unreachable
     the job stays in its current (non-failed) state instead of being
     marked failed for an infrastructure outage. Returns True if enqueued.
+
+    user_keys (per-user AI keys) travel as task kwargs — in-memory
+    through the broker only, never written to the database. Only the
+    stages that call AI providers receive them.
     """
     if not broker_reachable():
         log.warning("broker unreachable; job %s stays at current stage until a worker runs",
                     job_id)
         return False
     try:
-        task_fn.apply_async(args=(job_id,), priority=min(9, max(0, priority or PRIORITY_NORMAL)))
+        kwargs = {"user_keys": user_keys} if user_keys else {}
+        task_fn.apply_async(args=(job_id,), kwargs=kwargs,
+                            priority=min(9, max(0, priority or PRIORITY_NORMAL)))
         return True
     except Exception as exc:
         log.warning("celery enqueue failed (job %s stays at current stage): %s", job_id, exc)
@@ -101,7 +108,8 @@ def _backoff(task_self) -> int:
 # ---------------------------------------------------------------- pipeline
 @celery_app.task(bind=True, name="backend.celery_app.tasks.ingest_video",
                  max_retries=3, time_limit=600, soft_time_limit=540)
-def ingest_video(self, video_id: str, job_id: str):
+def ingest_video(self, video_id: str, job_id: str,
+                 user_keys: dict[str, list[str]] | None = None):
     """Re-validate the uploaded file, then hand off to processing."""
     from backend.database import Job, Video  # noqa: PLC0415
 
@@ -131,7 +139,7 @@ def ingest_video(self, video_id: str, job_id: str):
             return
         set_job_progress(db, job_id, stage="ingested", progress=10.0,
                          message="Upload validated")
-        _next(process_video, job_id, job.priority)
+        _next(process_video, job_id, job.priority, user_keys=user_keys)
         log.info("ingest_video done job=%s", job_id)
     except Exception as exc:
         log.exception("ingest_video job=%s crashed", job_id)
@@ -148,7 +156,8 @@ def ingest_video(self, video_id: str, job_id: str):
 
 @celery_app.task(bind=True, name="backend.celery_app.tasks.process_video",
                  max_retries=2, time_limit=1800, soft_time_limit=1650)
-def process_video(self, job_id: str):
+def process_video(self, job_id: str,
+                  user_keys: dict[str, list[str]] | None = None):
     """Agent02: normalize, extract audio/frames/scenes/thumbnails."""
     from backend.config import get_settings  # noqa: PLC0415
     from backend.database import Job, Video  # noqa: PLC0415
@@ -193,7 +202,7 @@ def process_video(self, job_id: str):
         db.commit()
         set_job_progress(db, job_id, stage="processed", progress=30.0,
                          message="Video processed")
-        _next(ai_analyze, job_id, job.priority)
+        _next(ai_analyze, job_id, job.priority, user_keys=user_keys)
         log.info("process_video done job=%s", job_id)
     except Exception as exc:
         # A Retry raised by the inner self.retry() above must propagate
@@ -223,10 +232,20 @@ def process_video(self, job_id: str):
 
 @celery_app.task(bind=True, name="backend.celery_app.tasks.ai_analyze",
                  max_retries=2, time_limit=2400, soft_time_limit=2250)
-def ai_analyze(self, job_id: str):
-    """Agents 03-06: speech -> vision -> summary -> highlights."""
+def ai_analyze(self, job_id: str,
+               user_keys: dict[str, list[str]] | None = None):
+    """Agents 03-06: speech -> vision -> summary -> highlights.
+
+    user_keys: per-user AI keys for this job only ({"gemini": [key],
+    "groq": [key]}). They arrive as task kwargs from the upload, live
+    in memory for this job, and are never written to the database —
+    the user's browser is the only place they are saved. A provided
+    list REPLACES the owner keys for that provider, so the job spends
+    the user's own quota, never the owner's. No user keys -> owner
+    (env) keys, as before.
+    """
     from backend.config import get_settings  # noqa: PLC0415
-    from backend.database import Job, Video  # noqa: PLC0415
+    from backend.database import Job  # noqa: PLC0415
 
     db = _db()
     try:
@@ -239,25 +258,9 @@ def ai_analyze(self, job_id: str):
         proc = prev.get("processing", {})
         lang = job.output_lang or "en"
 
-        # Per-user transcription choice from video.meta (Settings BYOK):
-        # provider "auto" = server chain; "gemini"/"groq" = that provider
-        # only, with the user's own key when one was supplied (decrypted
-        # transiently here, never logged).
-        video = db.query(Video).filter_by(id=job.video_id).one_or_none()
-        prefs = (video.meta or {}) if video is not None else {}
-        speech_provider = prefs.get("transcription_provider", "auto")
-        speech_key = None
-        enc = prefs.get("transcription_key_enc")
-        if enc:
-            from backend.security.keyvault import decrypt_key  # noqa: PLC0415
-            speech_key = decrypt_key(enc)
-
-        # Per-user AI keys (Settings -> upload form fields -> video.meta):
-        # when the user supplied their own Gemini/Groq keys, EVERY AI
-        # step of this job (speech, vision, summary, and later the
-        # render translations) spends the user's own quota, never the
-        # owner's. No user keys -> owner (env) keys, as before.
-        user_keys = _user_keys_from_prefs(prefs)
+        # Per-user AI keys arrive as task kwargs (see docstring):
+        # no key material is read from video.meta anymore.
+        user_keys = user_keys or {}
 
         from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
         manager = ProviderManager(settings, user_keys=user_keys)
@@ -269,8 +272,11 @@ def ai_analyze(self, job_id: str):
         speech = SpeechAgent(model_name=settings.WHISPER_MODEL,
                              device=settings.WHISPER_DEVICE,
                              provider_manager=manager)
-        speech_out = speech.transcribe(proc.get("audio_path"), job_id,
-                                       provider=speech_provider, key=speech_key)
+        # One chain for every job (groq -> gemini -> huggingface): the
+        # manager spends the user's own key for any provider they
+        # supplied one for, else the owner key. No per-job provider
+        # choice anymore — the user enters keys once, in Settings.
+        speech_out = speech.transcribe(proc.get("audio_path"), job_id)
         transcript = speech_out.get("transcript", [])
 
         # -- agent04 vision --
@@ -305,7 +311,7 @@ def ai_analyze(self, job_id: str):
         db.commit()
         set_job_progress(db, job_id, stage="analyzed", progress=82.0,
                          message="Analysis complete")
-        _next(render_recap, job_id, job.priority)
+        _next(render_recap, job_id, job.priority, user_keys=user_keys)
         log.info("ai_analyze done job=%s", job_id)
     except Exception as exc:
         log.exception("ai_analyze job=%s crashed", job_id)
@@ -318,28 +324,6 @@ def ai_analyze(self, job_id: str):
             db2.close()
     finally:
         db.close()
-
-
-def _user_keys_from_prefs(prefs: dict) -> dict[str, list[str]]:
-    """Decrypt per-user (BYOK) AI keys from video.meta.
-
-    Returns {"gemini": [key]} / {"groq": [key]} for whichever keys the
-    user supplied at upload time. Empty dict = use owner (env) keys.
-    Keys live here only transiently and are never logged."""
-    from backend.security.keyvault import decrypt_key  # noqa: PLC0415
-
-    out: dict[str, list[str]] = {}
-    for provider, field in (("gemini", "gemini_key_enc"), ("groq", "groq_key_enc")):
-        enc = prefs.get(field)
-        if enc:
-            try:
-                key = decrypt_key(enc)
-            except Exception:
-                log.warning("could not decrypt %s user key; using owner key", provider)
-                continue
-            if key:
-                out[provider] = [key]
-    return out
 
 
 def _complete_with_retry(settings, prompt: str, *, json_mode: bool,
@@ -505,8 +489,14 @@ def _intro_outro_texts(prefs: dict, summary: dict) -> tuple[str | None, str | No
 
 @celery_app.task(bind=True, name="backend.celery_app.tasks.render_recap",
                  max_retries=1, time_limit=3600, soft_time_limit=3300)
-def render_recap(self, job_id: str):
-    """Agent07: cut/concat highlights, subtitles, intro/outro, export MP4."""
+def render_recap(self, job_id: str,
+                 user_keys: dict[str, list[str]] | None = None):
+    """Agent07: cut/concat highlights, subtitles, intro/outro, export MP4.
+
+    user_keys: per-user AI keys for this job only (task kwargs, never
+    written to the database). Translations in this step spend the
+    user's own quota when they supplied keys.
+    """
     from backend.config import get_settings  # noqa: PLC0415
     from backend.database import Job, Output, Video  # noqa: PLC0415
 
@@ -524,11 +514,8 @@ def render_recap(self, job_id: str):
         highlights = prev.get("highlights", [])
         speech_lang = (prev.get("speech", {}) or {}).get("language")
 
-        # Per-user AI keys (see ai_analyze): translations in this step
-        # also spend the user's own quota when they supplied keys.
-        _video = db.query(Video).filter_by(id=job.video_id).one_or_none()
-        user_keys = _user_keys_from_prefs(
-            (_video.meta or {}) if _video is not None else {})
+        # Per-user AI keys arrive as task kwargs (see ai_analyze).
+        user_keys = user_keys or {}
 
         # Subtitle language (job.subtitle_language): the SRT must be IN
         # that language. Previously the raw transcript was written as-is,
@@ -766,12 +753,14 @@ def cleanup_old_files(max_age_days: int = 7):
 
 
 # Convenience: build the whole pipeline as a celery chain (used by API/tests).
-def build_pipeline(video_id: str, job_id: str, priority: int = PRIORITY_NORMAL):
+def build_pipeline(video_id: str, job_id: str, priority: int = PRIORITY_NORMAL,
+                   user_keys: dict[str, list[str]] | None = None):
+    keys_kw = {"user_keys": user_keys} if user_keys else {}
     return chain(
-        ingest_video.s(video_id, job_id).set(priority=priority),
-        process_video.s(job_id).set(priority=priority),
-        ai_analyze.s(job_id).set(priority=priority),
-        render_recap.s(job_id).set(priority=priority),
+        ingest_video.s(video_id, job_id, **keys_kw).set(priority=priority),
+        process_video.s(job_id, **keys_kw).set(priority=priority),
+        ai_analyze.s(job_id, **keys_kw).set(priority=priority),
+        render_recap.s(job_id, **keys_kw).set(priority=priority),
         send_notification.s(job_id).set(priority=priority),
     )
 
@@ -803,18 +792,23 @@ def broker_reachable(timeout: float = 1.5) -> bool:
 
 
 def enqueue_pipeline(video_id: str, job_id: str,
-                     priority: int = PRIORITY_NORMAL) -> bool:
+                     priority: int = PRIORITY_NORMAL,
+                     user_keys: dict[str, list[str]] | None = None) -> bool:
     """
     Dispatch ingest_video to the upload queue. Returns False (job stays
     "queued") when the broker is unreachable — never raises, never hangs on
     kombu connection retries.
+
+    user_keys travel as task kwargs (in-memory through the broker only,
+    never written to the database) and are forwarded stage to stage.
     """
     if not broker_reachable():
         log.warning("broker unreachable; job %s stays queued until a worker runs",
                     job_id)
         return False
     try:
-        ingest_video.apply_async(args=(video_id, job_id),
+        kwargs = {"user_keys": user_keys} if user_keys else {}
+        ingest_video.apply_async(args=(video_id, job_id), kwargs=kwargs,
                                  queue="video_upload_queue",
                                  priority=min(9, max(0, priority)))
         return True

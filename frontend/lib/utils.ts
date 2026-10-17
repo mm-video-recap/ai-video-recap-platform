@@ -84,58 +84,37 @@ export function parseSrt(srt: string): ParsedCue[] {
 }
 
 /** Load recap preferences from localStorage. */
-export function loadPreferences(): { summaryStyle: string; defaultLanguage: string } {
+export function loadPreferences(): { defaultLanguage: string } {
   try {
     const raw = window.localStorage.getItem("recap_prefs");
     if (raw) {
       const p = JSON.parse(raw);
       return {
-        summaryStyle: p.summaryStyle || "detailed",
         defaultLanguage: p.defaultLanguage || "my",
       };
     }
   } catch {
     /* ignore */
   }
-  return { summaryStyle: "detailed", defaultLanguage: "my" };
+  return { defaultLanguage: "my" };
 }
 
-/** Transcription (BYOK) preferences: provider + the user's own key.
- * Stored in localStorage only. The key is sent with each upload as a
- * form field (never a query param) and stored encrypted server-side. */
-export type TranscriptionProvider = "auto" | "gemini" | "groq";
-
-export function loadTranscriptionPrefs(): { provider: TranscriptionProvider; key: string } {
-  try {
-    const raw = window.localStorage.getItem("recap_transcription");
-    if (raw) {
-      const p = JSON.parse(raw);
-      const provider = p.provider === "gemini" || p.provider === "groq" ? p.provider : "auto";
-      return { provider, key: typeof p.key === "string" ? p.key : "" };
-    }
-  } catch {
-    /* ignore */
-  }
-  return { provider: "auto", key: "" };
-}
-
-export function saveTranscriptionPrefs(provider: TranscriptionProvider, key: string) {
-  window.localStorage.setItem("recap_transcription", JSON.stringify({ provider, key }));
-}
-
-/** Per-user AI keys (BYOK) for summary / vision / translation.
- * Stored in localStorage only. The keys are sent with each upload as
- * form fields (never query params) and stored encrypted server-side.
- * When set, the job spends the user's own quota, never the owner's.
+/** Per-user AI keys (BYOK) for EVERYTHING: transcription, summary,
+ * vision, translation. ONE entry, in Settings.
+ * Stored in localStorage ONLY — the browser is the only place keys
+ * are saved. They are sent with each upload as form fields (never
+ * query params) and the server never writes them to the database;
+ * they travel as in-memory task kwargs for that job only. When a key
+ * is set, the job spends the user's own quota, never the owner's.
  * Empty = owner (env) keys, as before. */
-export interface AiKeys {
+export interface UserKeys {
   geminiKey: string;
   groqKey: string;
 }
 
-export function loadAiKeys(): AiKeys {
+export function loadUserKeys(): UserKeys {
   try {
-    const raw = window.localStorage.getItem("recap_ai_keys");
+    const raw = window.localStorage.getItem("recap_keys");
     if (raw) {
       const p = JSON.parse(raw);
       return {
@@ -143,14 +122,49 @@ export function loadAiKeys(): AiKeys {
         groqKey: typeof p.groqKey === "string" ? p.groqKey : "",
       };
     }
+    // One-time migration from the old two-place storage
+    // (recap_ai_keys + recap_transcription): carry the user's saved
+    // keys over so they never have to re-enter them, then drop the
+    // legacy entries.
+    let geminiKey = "";
+    let groqKey = "";
+    try {
+      const old = window.localStorage.getItem("recap_ai_keys");
+      if (old) {
+        const p = JSON.parse(old);
+        if (typeof p.geminiKey === "string") geminiKey = p.geminiKey;
+        if (typeof p.groqKey === "string") groqKey = p.groqKey;
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      const tp = window.localStorage.getItem("recap_transcription");
+      if (tp) {
+        const p = JSON.parse(tp);
+        if (typeof p.key === "string" && p.key) {
+          if (p.provider === "gemini" && !geminiKey) geminiKey = p.key;
+          if (p.provider === "groq" && !groqKey) groqKey = p.key;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    if (geminiKey || groqKey) {
+      const merged = { geminiKey, groqKey };
+      window.localStorage.setItem("recap_keys", JSON.stringify(merged));
+      window.localStorage.removeItem("recap_ai_keys");
+      window.localStorage.removeItem("recap_transcription");
+      return merged;
+    }
   } catch {
     /* ignore */
   }
   return { geminiKey: "", groqKey: "" };
 }
 
-export function saveAiKeys(keys: AiKeys) {
-  window.localStorage.setItem("recap_ai_keys", JSON.stringify(keys));
+export function saveUserKeys(keys: UserKeys) {
+  window.localStorage.setItem("recap_keys", JSON.stringify(keys));
 }
 
 /** Voiceover (TTS narration) preferences, stored in localStorage only. */

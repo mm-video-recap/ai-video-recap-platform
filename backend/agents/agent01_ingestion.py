@@ -237,13 +237,8 @@ class IngestionAgent:
 def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       storage_path: str, output_lang: str = "en",
                       subtitle_language: str = "my",
-                      recap_style: str = "detailed",
                       intro_enabled: bool = True,
                       outro_enabled: bool = True,
-                      transcription_provider: str = "auto",
-                      transcription_key_enc: str = "",
-                      gemini_key_enc: str = "",
-                      groq_key_enc: str = "",
                       voice_mode: str = "original",
                       tts_provider: str = "edge",
                       tts_voice: str = "thiha",
@@ -282,15 +277,12 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
     )
     # Intro/outro toggles live in video.meta (JSON) so no schema
     # migration is needed; missing keys mean "enabled" (backward compat).
+    # NOTE: per-user AI keys are NEVER stored here — they travel as
+    # Celery task kwargs (in-memory only); the browser is the only
+    # place they are saved.
     video.meta = {**(video.meta or {}),
                   "intro_enabled": bool(intro_enabled),
                   "outro_enabled": bool(outro_enabled),
-                  "transcription_provider": transcription_provider,
-                  "transcription_key_enc": transcription_key_enc,
-                  # Per-user AI keys (BYOK): encrypted ciphertext only,
-                  # never plaintext. Empty = owner keys for this job.
-                  "gemini_key_enc": gemini_key_enc,
-                  "groq_key_enc": groq_key_enc,
                   "voice_mode": voice_mode,
                   "tts_provider": tts_provider,
                   "tts_voice": tts_voice,
@@ -308,7 +300,6 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
         priority=priority,
         output_lang=output_lang,
         subtitle_language=subtitle_language,
-        recap_style=recap_style,
     )
     db.add(video)
     db.add(job)

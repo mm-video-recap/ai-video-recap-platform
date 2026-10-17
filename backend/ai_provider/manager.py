@@ -49,7 +49,7 @@ TASK_ROUTES: dict[str, list[str]] = {
     "transcript-analysis": ["groq", "gemini", "openrouter"],
     "backup": ["openrouter", "groq", "gemini"],
     "vision": ["huggingface", "gemini", "groq", "openrouter"],
-    "speech": ["groq", "huggingface"],
+    "speech": ["groq", "gemini", "huggingface"],
 }
 
 
@@ -756,7 +756,7 @@ class ProviderManager:
     async def transcribe(self, audio_path: str | Path, *,
                          user_id: str | None = None,
                          job_id: str | None = None) -> tuple[dict, str]:
-        """Speech task chain: groq -> huggingface. Returns (result, provider)."""
+        """Speech task chain: groq -> gemini -> huggingface. Returns (result, provider)."""
         errors: list[str] = []
         for provider_name in TASK_ROUTES["speech"]:
             provider = self.providers[provider_name]
@@ -771,20 +771,6 @@ class ProviderManager:
                 self._log_usage(provider_name, None, "speech", False, ms, user_id, job_id, str(exc))
                 errors.append(f"{provider_name}: {exc}")
         raise ProviderError(f"all speech providers failed: {' | '.join(errors)}")
-
-    async def transcribe_with(self, provider_name: str, audio_path: str | Path, *,
-                              key: str | None = None) -> tuple[dict, str]:
-        """Transcribe with ONE named provider (user's choice), not the chain.
-
-        When key is given, the provider runs with that per-user (BYOK) key
-        instead of the server env keys. Raises ProviderError on failure.
-        """
-        provider_cls = {"gemini": GeminiProvider, "groq": GroqProvider}.get(provider_name)
-        if provider_cls is None:
-            raise ProviderError(f"unknown transcription provider: {provider_name}")
-        provider = provider_cls(self.settings, keys=[key] if key else None)
-        result = await provider.transcribe(audio_path)
-        return result, provider_name
 
     # -- vision -------------------------------------------------------------
     async def describe_frame(self, image_path: str | Path, prompt: str, *,
