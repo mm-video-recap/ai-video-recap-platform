@@ -246,6 +246,8 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       tts_pitch: int = 0,
                       intro_text: str = "",
                       outro_text: str = "",
+                      intro_video_key: str = "",
+                      outro_video_key: str = "",
                       priority: int = 3) -> tuple:
     """
     Create the Video + Job rows for a successful ingestion.
@@ -290,6 +292,12 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                   "tts_pitch": int(tts_pitch),
                   "intro_text": str(intro_text or "")[:200],
                   "outro_text": str(outro_text or "")[:200]}
+    # Uploaded intro/outro videos (storage keys): the render step
+    # downloads them and concatenates them around the recap clips.
+    if intro_video_key:
+        video.meta["intro_video_key"] = str(intro_video_key)
+    if outro_video_key:
+        video.meta["outro_video_key"] = str(outro_video_key)
     job = Job(
         id=result.job_id,
         video_id=result.video_id,

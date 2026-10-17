@@ -14,7 +14,7 @@ def test_remap_transcript_to_recap_timeline():
         {"start": 40, "end": 42, "text": "after all"},       # dropped
     ]
     # intro on (2s) -> clip1 at recap [2,12), clip2 at recap [12,17)
-    out = agent._remap_transcript(transcript, highlights, True, True)
+    out = agent._remap_transcript(transcript, highlights, 2.0)
     assert [(c["start"], c["end"], c["text"]) for c in out] == [
         (2 + 2, 2 + 4, "inside clip 1"),       # 12-14 -> recap 4-6
         (2 + 8, 2 + 10, "spans gap"),           # 18-20 -> recap 10-12
@@ -28,7 +28,7 @@ def test_remap_no_intro_shifts_to_zero():
     agent = RenderingAgent("/tmp")
     out = agent._remap_transcript(
         [{"start": 5, "end": 7, "text": "hi"}],
-        [{"start": 0, "end": 10}], False, False)
+        [{"start": 0, "end": 10}], 0.0)
     assert [(c["start"], c["end"]) for c in out] == [(5.0, 7.0)]
 
 

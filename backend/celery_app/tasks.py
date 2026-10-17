@@ -487,6 +487,26 @@ def _intro_outro_texts(prefs: dict, summary: dict) -> tuple[str | None, str | No
     return intro, outro
 
 
+def _download_side_video(job_id: str, storage_key: str, slot: str,
+                         settings) -> str | None:
+    """Download an uploaded intro/outro video (storage key) to a local
+    file for FFmpeg. Returns the local path or None when the side video
+    is missing/unreadable — the renderer then falls back to the text
+    card, never failing the job over a decorative part."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from backend.storage import get_storage  # noqa: PLC0415
+
+    try:
+        dest = Path(settings.STORAGE_ROOT) / "results" / job_id / f"{slot}_src.mp4"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        get_storage().download(storage_key, dest)
+        return str(dest) if dest.exists() else None
+    except Exception as exc:
+        log.warning("render %s video download failed job=%s: %s", slot, job_id, exc)
+        return None
+
+
 @celery_app.task(bind=True, name="backend.celery_app.tasks.render_recap",
                  max_retries=1, time_limit=3600, soft_time_limit=3300)
 def render_recap(self, job_id: str,
@@ -546,6 +566,17 @@ def render_recap(self, job_id: str,
         intro_enabled = prefs.get("intro_enabled", True)
         outro_enabled = prefs.get("outro_enabled", True)
         intro_text, outro_text = _intro_outro_texts(prefs, summary)
+        # Uploaded intro/outro VIDEOS (storage keys in video.meta) win
+        # over the text cards. Materialize them locally for FFmpeg; a
+        # missing/unreadable side video falls back to the text card in
+        # the renderer (never fails the job).
+        intro_clip = outro_clip = None
+        if intro_enabled and prefs.get("intro_video_key"):
+            intro_clip = _download_side_video(
+                job_id, prefs["intro_video_key"], "intro", settings)
+        if outro_enabled and prefs.get("outro_video_key"):
+            outro_clip = _download_side_video(
+                job_id, prefs["outro_video_key"], "outro", settings)
         voice_mode = prefs.get("voice_mode", "original")
         narration_text = ""
         narration_failed = False
@@ -583,6 +614,8 @@ def render_recap(self, job_id: str,
             outro_text=outro_text,
             intro_enabled=bool(intro_enabled),
             outro_enabled=bool(outro_enabled),
+            intro_clip=intro_clip,
+            outro_clip=outro_clip,
             narration_text=narration_text or None,
             **tts_kwargs)
 

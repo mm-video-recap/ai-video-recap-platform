@@ -116,7 +116,7 @@ class RenderingAgent:
         return vf
 
     def _remap_transcript(self, transcript: list[dict], highlights: list[dict],
-                         intro_enabled: bool, outro_enabled: bool) -> list[dict]:
+                         intro_duration: float = 0.0) -> list[dict]:
         """Remap subtitle cues from ORIGINAL-video time to RECAP time.
 
         The SRT is burned onto the JOINED video (intro + concatenated
@@ -125,10 +125,12 @@ class RenderingAgent:
         the wrong moment (live 2026-10-16: subtitles out of sync). Each
         cue is clipped to the highlight(s) it overlaps and shifted to
         that clip's position in the recap; cues outside all highlights
-        are dropped.
+        are dropped. intro_duration is the length of the intro part
+        (2.0s for a text title card, the real length for an uploaded
+        intro video, 0.0 when intro is off).
         """
         layout: list[tuple[float, float, float]] = []  # (recap_start, orig_start, orig_end)
-        t = 2.0 if intro_enabled else 0.0  # title cards are exactly 2s
+        t = float(intro_duration or 0.0)
         for hl in highlights or []:
             try:
                 s, e = float(hl["start"]), float(hl["end"])
@@ -197,6 +199,41 @@ class RenderingAgent:
         except Exception:
             return None
 
+    def _normalize_video_clip(self, workdir: Path, src: str | Path, name: str,
+                              has_audio: bool) -> tuple[Path | None, float]:
+        """Re-encode an uploaded intro/outro video to the recap layout
+        (1280x720, 30fps, yuv420p — same as the text title cards) so the
+        concat step sees identical stream parameters. The clip keeps its
+        own audio when it has one; when it has none but the recap has
+        audio, a silent track is added (a video-only first segment
+        would drop the clips' audio from the concat). Returns
+        (path, duration_sec) or (None, 0.0) on any failure — the caller
+        falls back to the text title card, never fails the job.
+        """
+        src = Path(src)
+        out = workdir / f"{name}_video.mp4"
+        src_has_audio = self._has_audio(src)
+        vf = ("scale=1280:720:force_original_aspect_ratio=decrease,"
+              "pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30")
+        if src_has_audio or not has_audio:
+            cmd = [self.ffmpeg, "-y", "-i", str(src), "-vf", vf,
+                   "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+            if src_has_audio:
+                cmd += ["-c:a", "aac", "-b:a", "128k"]
+            cmd += [str(out)]
+        else:
+            cmd = [self.ffmpeg, "-y", "-i", str(src),
+                   "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                   "-vf", vf,
+                   "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-b:a", "128k", "-shortest", str(out)]
+        p = self._run(cmd, timeout=300)
+        if p.returncode == 0 and out.exists():
+            dur = self._duration(out) or 0.0
+            return out, dur
+        log.warning("normalize %s failed, falling back: %s", name, p.stderr[-300:])
+        return None, 0.0
+
     def _title_card(self, workdir: Path, text: str, name: str,
                     w: int = 1280, h: int = 720, has_audio: bool = True) -> Path | None:
         """2-second title card; returns path or None if drawtext unavailable.
@@ -230,6 +267,8 @@ class RenderingAgent:
                outro_text: str | None = None,
                intro_enabled: bool = True,
                outro_enabled: bool = True,
+               intro_clip: str | Path | None = None,
+               outro_clip: str | Path | None = None,
                narration_text: str | None = None,
                tts_provider: str = "edge",
                tts_voice: str = "thiha",
@@ -276,10 +315,42 @@ class RenderingAgent:
                 res.errors.append("all highlight clips failed to cut")
                 return res
 
-            # 2) concat (+ optional title cards)
+            # 2) concat (+ optional intro/outro). An uploaded intro/outro
+            # VIDEO wins over the text title card; when the video is
+            # missing or fails to normalize, fall back to the text card
+            # (never fail the job over a decorative part). The intro
+            # part's real duration drives the subtitle remap offset.
             parts: list[Path] = []
-            intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio) if (intro_enabled and (intro_text or title)) else None
-            outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio) if (outro_enabled and outro_text) else None
+            intro_duration = 0.0
+            intro = None
+            if intro_enabled:
+                if intro_clip:
+                    if Path(intro_clip).exists():
+                        intro, intro_duration = self._normalize_video_clip(
+                            workdir, intro_clip, "intro", has_audio=has_audio)
+                        if intro is None:
+                            res.warnings.append(
+                                "intro video could not be used; used text card instead")
+                    else:
+                        res.warnings.append(
+                            "intro video file not found; used text card instead")
+                if intro is None and (intro_text or title):
+                    intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio)
+                    intro_duration = 2.0 if intro else 0.0
+            outro = None
+            if outro_enabled:
+                if outro_clip:
+                    if Path(outro_clip).exists():
+                        outro, _ = self._normalize_video_clip(
+                            workdir, outro_clip, "outro", has_audio=has_audio)
+                        if outro is None:
+                            res.warnings.append(
+                                "outro video could not be used; used text card instead")
+                    else:
+                        res.warnings.append(
+                            "outro video file not found; used text card instead")
+                if outro is None and outro_text:
+                    outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio)
             if intro:
                 parts.append(intro)
             parts.extend(clips)
@@ -341,7 +412,7 @@ class RenderingAgent:
             # + outro), NOT the original timeline.
             srt_path = workdir / "subtitles.srt"
             self._write_srt(srt_path, self._remap_transcript(
-                transcript or [], highlights, intro_enabled, outro_enabled))
+                transcript or [], highlights, intro_duration))
             res.subtitle_path = str(srt_path)
             final = workdir / "recap_final.mp4"
             font = self._find_font()

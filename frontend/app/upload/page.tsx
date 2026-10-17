@@ -31,7 +31,7 @@ type Lang = "my" | "en" | "none";
 
 function UploadContent() {
   const { t } = useT();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, profile } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -41,13 +41,21 @@ function UploadContent() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Key gate: only the owner account may use the server keys. Everyone
+  // else needs BOTH their own Gemini + Groq keys saved in Settings.
+  const savedKeys = useMemo(() => loadUserKeys(), []);
+  const keysMissing =
+    profile !== null &&
+    !profile.is_owner &&
+    (!savedKeys.geminiKey || !savedKeys.groqKey);
+
   const prefs = useMemo(() => loadPreferences(), []);
   const [summaryLang, setSummaryLang] = useState<"my" | "en">(prefs.defaultLanguage as "my" | "en");
   const [subtitleLang, setSubtitleLang] = useState<Lang>(prefs.defaultLanguage as "my" | "en");
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
-  const [introText, setIntroText] = useState("");
-  const [outroText, setOutroText] = useState("");
+  const [introFile, setIntroFile] = useState<File | null>(null);
+  const [outroFile, setOutroFile] = useState<File | null>(null);
   const [voice, setVoice] = useState<VoicePrefs>(() => loadVoicePrefs());
 
   const updateVoice = (patch: Partial<VoicePrefs>) => {
@@ -105,6 +113,10 @@ function UploadContent() {
       setError(t("upload.errors.noFile"));
       return;
     }
+    if (keysMissing) {
+      setError(t("upload.keysRequired"));
+      return;
+    }
     setUploading(true);
     setProgress(0);
     setError(null);
@@ -126,8 +138,11 @@ function UploadContent() {
           subtitle_language: subtitleLang,
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
-          intro_text: introText.trim(),
-          outro_text: outroText.trim(),
+          // Uploaded intro/outro videos (form fields): the final recap
+          // is intro video + recap clips + outro video. No file means
+          // the default text card. Only sent when the toggle is on.
+          ...(introEnabled && introFile ? { intro_file: introFile } : {}),
+          ...(outroEnabled && outroFile ? { outro_file: outroFile } : {}),
           // Voiceover (TTS narration) prefs from this page.
           voice_mode: voice.voiceMode,
           tts_provider: voice.ttsProvider,
@@ -208,6 +223,18 @@ function UploadContent() {
       </motion.div>
 
       <div className="mt-6 space-y-6">
+        {keysMissing && (
+          <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+            ⚠️ {t("upload.keysRequired")}{" "}
+            <button
+              type="button"
+              onClick={() => router.push("/settings")}
+              className="font-semibold underline"
+            >
+              {t("upload.keysRequiredCta")}
+            </button>
+          </div>
+        )}
         <FileUploader file={file} onFile={handleFile} error={error} />
 
         {file && !uploading && (
@@ -235,27 +262,51 @@ function UploadContent() {
                   <div className="space-y-3">
                     {toggleRow(t("upload.introEnabled"), introEnabled, setIntroEnabled)}
                     {introEnabled && (
-                      <input
-                        type="text"
-                        value={introText}
-                        onChange={(e) => setIntroText(e.target.value)}
-                        maxLength={200}
-                        placeholder={t("upload.introTextPlaceholder")}
-                        aria-label={t("upload.introText")}
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
-                      />
+                      <div className="space-y-1.5">
+                        <label className="block cursor-pointer rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm">
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            aria-label={t("upload.introVideo")}
+                            onChange={(e) => setIntroFile(e.target.files?.[0] ?? null)}
+                          />
+                          {introFile ? `🎬 ${introFile.name}` : t("upload.introVideoPlaceholder")}
+                        </label>
+                        {introFile && (
+                          <button
+                            type="button"
+                            onClick={() => setIntroFile(null)}
+                            className="text-xs text-red-500 underline"
+                          >
+                            {t("upload.remove")}
+                          </button>
+                        )}
+                      </div>
                     )}
                     {toggleRow(t("upload.outroEnabled"), outroEnabled, setOutroEnabled)}
                     {outroEnabled && (
-                      <input
-                        type="text"
-                        value={outroText}
-                        onChange={(e) => setOutroText(e.target.value)}
-                        maxLength={200}
-                        placeholder={t("upload.outroTextPlaceholder")}
-                        aria-label={t("upload.outroText")}
-                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
-                      />
+                      <div className="space-y-1.5">
+                        <label className="block cursor-pointer rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm">
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            aria-label={t("upload.outroVideo")}
+                            onChange={(e) => setOutroFile(e.target.files?.[0] ?? null)}
+                          />
+                          {outroFile ? `🎬 ${outroFile.name}` : t("upload.outroVideoPlaceholder")}
+                        </label>
+                        {outroFile && (
+                          <button
+                            type="button"
+                            onClick={() => setOutroFile(null)}
+                            className="text-xs text-red-500 underline"
+                          >
+                            {t("upload.remove")}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

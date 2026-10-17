@@ -46,6 +46,53 @@ def _to_summary(db: Session, video: Video) -> VideoSummary:
         thumbnail_url=None)  # thumbnails are generated on disk during processing; no public URL yet
 
 
+def _store_side_video(side_file, video_id: str, slot: str,
+                      storage, max_bytes: int) -> str:
+    """Stream an optional uploaded intro/outro video to temp, probe it
+    with ffprobe, store it, return the storage key. Raises HTTPException
+    400 when ffprobe exists but cannot read the file (corrupt), 413
+    when it exceeds the cap. Temp file is always removed."""
+    import shutil  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from backend.agents.agent01_ingestion import _ffprobe_metadata  # noqa: PLC0415
+
+    suffix = Path(side_file.filename or f"{slot}.mp4").suffix.lower() or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        written = 0
+        while chunk := side_file.file.read(4 * 1024 * 1024):
+            written += len(chunk)
+            if written > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"{slot} video too large: exceeds "
+                           f"{max_bytes} bytes free-tier limit")
+            tmp.write(chunk)
+        tmp.close()
+        tmp_path = Path(tmp.name)
+        meta, used = _ffprobe_metadata(tmp_path)
+        if not used and shutil.which("ffprobe"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{slot} video appears corrupt or truncated: "
+                       f"ffprobe could not read it. Re-save / re-export "
+                       f"the video and upload again.")
+        if used and not (meta.get("duration_sec") or 0) > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{slot} video has no readable duration.")
+        key = f"uploads/{video_id}/{slot}{suffix}"
+        storage.put(tmp_path, key)
+        return key
+    finally:
+        try:
+            tmp.close()
+        except Exception:
+            pass
+        Path(tmp.name).unlink(missing_ok=True)
+
+
 @router.post("/upload", response_model=UploadResponse,
              status_code=status.HTTP_201_CREATED)
 # Upload cap from settings (RATE_LIMIT_UPLOAD, default "10/minute") — the
@@ -57,6 +104,11 @@ def upload_video(request: Request, file: UploadFile = File(...),
                                                pattern="^(my|en|none)$"),
                  intro_enabled: bool = Query(default=True),
                  outro_enabled: bool = Query(default=True),
+                 # Optional uploaded intro/outro VIDEOS (replacing the
+                 # text cards): the final recap is intro video + recap
+                 # clips + outro video, concatenated at render time.
+                 intro_file: UploadFile = File(default=None),
+                 outro_file: UploadFile = File(default=None),
                  # Per-user (BYOK) AI keys: FORM fields, never query
                  # params — query strings land in access logs. They are
                  # passed to the pipeline as task kwargs (in-memory
@@ -101,6 +153,18 @@ def upload_video(request: Request, file: UploadFile = File(...),
         except ValueError:
             pass  # unparseable header — fall through to the streaming count
 
+    # Key gate: only the owner account (OWNER_EMAIL) may use the server
+    # (env) AI keys. Everyone else MUST bring both their own Gemini +
+    # Groq keys — one each — or the upload is rejected before any file
+    # is read.
+    from backend.api.deps import is_owner  # noqa: PLC0415
+    if not is_owner(user) and not (gemini_key and groq_key):
+        raise HTTPException(
+            status_code=400,
+            detail="Both your own Gemini API key and Groq API key are "
+                   "required. Add them in Settings → My API Keys. Only "
+                   "the owner account may use the server keys.")
+
     suffix = Path(file.filename or "upload.bin").suffix.lower()
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix or ".bin")
     try:
@@ -144,6 +208,18 @@ def upload_video(request: Request, file: UploadFile = File(...),
         stored_path = storage_key if storage.name != "local" else str(
             storage.absolute(storage_key))  # type: ignore[attr-defined]
 
+        # Optional uploaded intro/outro videos: probe + store now (a bad
+        # side video fails the upload before any rows are written).
+        # Ignored when the matching toggle is off.
+        intro_video_key = ""
+        outro_video_key = ""
+        if intro_enabled and intro_file is not None and intro_file.filename:
+            intro_video_key = _store_side_video(
+                intro_file, result.video_id, "intro", storage, max_bytes)
+        if outro_enabled and outro_file is not None and outro_file.filename:
+            outro_video_key = _store_side_video(
+                outro_file, result.video_id, "outro", storage, max_bytes)
+
         # Per-user AI keys for this job only (see the Form fields
         # above): collected here, passed to the pipeline as task kwargs,
         # never persisted. Never logged.
@@ -175,6 +251,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
             tts_pitch=tts_pitch,
             intro_text=intro_text,
             outro_text=outro_text,
+            intro_video_key=intro_video_key,
+            outro_video_key=outro_video_key,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)
         db.commit()
         log_event(db, user.id, "video_uploaded",

@@ -102,13 +102,24 @@ export const getHealth = () =>
 export const getMe = (token: string | null) =>
   apiGet<UserProfile>("/api/auth/me", token);
 
+export const verifyApiKey = (
+  token: string | null,
+  provider: "gemini" | "groq",
+  key: string
+) =>
+  apiPost<{ valid: boolean; reason: string }>(
+    "/api/keys/verify",
+    token,
+    { provider, key }
+  );
+
 /* ---------------- Videos ---------------- */
 
 export function uploadVideo(
   file: File,
   token: string,
   onProgress: (pct: number) => void,
-  extra?: Record<string, string>
+  extra?: Record<string, string | File | undefined>
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -119,23 +130,28 @@ export function uploadVideo(
     const { output_lang, subtitle_language,
             intro_enabled, outro_enabled,
             voice_mode, tts_provider, tts_voice, tts_rate, tts_pitch,
-            intro_text, outro_text,
             ...formExtra } =
       extra ?? {};
     const qs = new URLSearchParams();
-    if (output_lang) qs.set("output_lang", output_lang);
-    if (subtitle_language) qs.set("subtitle_language", subtitle_language);
-    if (intro_enabled !== undefined) qs.set("intro_enabled", intro_enabled);
-    if (outro_enabled !== undefined) qs.set("outro_enabled", outro_enabled);
-    if (voice_mode) qs.set("voice_mode", voice_mode);
-    if (tts_provider) qs.set("tts_provider", tts_provider);
-    if (tts_voice) qs.set("tts_voice", tts_voice);
-    if (tts_rate !== undefined) qs.set("tts_rate", tts_rate);
-    if (tts_pitch !== undefined) qs.set("tts_pitch", tts_pitch);
-    if (intro_text) qs.set("intro_text", intro_text);
-    if (outro_text) qs.set("outro_text", outro_text);
-    // NOTE: gemini_key / groq_key stay in formExtra -> FormData body,
-    // never in the URL (query strings land in access logs).
+    // Query values are always strings in practice (File values live in
+    // formExtra); coerce defensively so a File can never leak into a URL.
+    const query: Record<string, string | undefined> = {
+      output_lang: typeof output_lang === "string" ? output_lang : undefined,
+      subtitle_language: typeof subtitle_language === "string" ? subtitle_language : undefined,
+      intro_enabled: typeof intro_enabled === "string" ? intro_enabled : undefined,
+      outro_enabled: typeof outro_enabled === "string" ? outro_enabled : undefined,
+      voice_mode: typeof voice_mode === "string" ? voice_mode : undefined,
+      tts_provider: typeof tts_provider === "string" ? tts_provider : undefined,
+      tts_voice: typeof tts_voice === "string" ? tts_voice : undefined,
+      tts_rate: typeof tts_rate === "string" ? tts_rate : undefined,
+      tts_pitch: typeof tts_pitch === "string" ? tts_pitch : undefined,
+    };
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== "") qs.set(k, v);
+    }
+    // NOTE: gemini_key / groq_key / intro_file / outro_file stay in
+    // formExtra -> FormData body, never in the URL (query strings land
+    // in access logs).
     const qsStr = qs.toString();
     xhr.open(
       "POST",
@@ -170,7 +186,10 @@ export function uploadVideo(
     const form = new FormData();
     form.append("file", file);
     if (formExtra) {
-      for (const [k, v] of Object.entries(formExtra)) form.append(k, v);
+      for (const [k, v] of Object.entries(formExtra)) {
+        if (v === undefined) continue;
+        form.append(k, v);
+      }
     }
     xhr.send(form);
   });
