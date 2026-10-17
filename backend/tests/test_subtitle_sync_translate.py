@@ -51,7 +51,8 @@ def test_translate_segments_to_myanmar(monkeypatch):
     monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
     segments = [{"start": 0, "end": 2, "text": "Hello"},
                 {"start": 2, "end": 4, "text": "Thank you"}]
-    out = tasks._translate_segments(object(), segments, "my", "en")
+    out, ok = tasks._translate_segments(object(), segments, "my", "en")
+    assert ok is True
     assert [s["text"] for s in out] == ["မင်္ဂလာပါ", "ကျေးဇူးတင်ပါတယ်"]
     assert [s["start"] for s in out] == [0, 2]  # timestamps preserved
 
@@ -61,7 +62,7 @@ def test_translate_segments_skips_same_language():
 
     segments = [{"start": 0, "end": 2, "text": "မင်္ဂလာပါ"}]
     # No provider call must happen: same language -> returned as-is.
-    assert tasks._translate_segments(object(), segments, "my", "my") == segments
+    assert tasks._translate_segments(object(), segments, "my", "my") == (segments, True)
 
 
 def test_translate_segments_falls_back_on_bad_json(monkeypatch):
@@ -76,4 +77,108 @@ def test_translate_segments_falls_back_on_bad_json(monkeypatch):
 
     monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
     segments = [{"start": 0, "end": 2, "text": "Hello"}]
-    assert tasks._translate_segments(object(), segments, "my", "en") == segments
+    out, ok = tasks._translate_segments(object(), segments, "my", "en")
+    assert out == segments
+    assert ok is False
+
+
+def test_translate_segments_retries_after_quota_error(monkeypatch):
+    """First attempt 429s, second succeeds -> translated, one retry sleep."""
+    import backend.celery_app.tasks as tasks
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    calls = {"n": 0}
+
+    class _Manager:
+        def __init__(self, settings):
+            pass
+
+        async def complete(self, task, prompt, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("429 quota exceeded")
+            return (json.dumps({"segments": [{"text": "မင်္ဂလာပါ"}]}), "gemini")
+
+    monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
+    segments = [{"start": 0, "end": 2, "text": "Hello"}]
+    out, ok = tasks._translate_segments(object(), segments, "my", "en")
+    assert ok is True
+    assert [s["text"] for s in out] == ["မင်္ဂလာပါ"]
+    assert calls["n"] == 2
+    assert sleeps == [20.0]
+
+
+def test_translate_segments_gives_up_after_retries(monkeypatch):
+    import backend.celery_app.tasks as tasks
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    class _Manager:
+        def __init__(self, settings):
+            pass
+
+        async def complete(self, task, prompt, **kw):
+            raise RuntimeError("429 quota exceeded")
+
+    monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
+    segments = [{"start": 0, "end": 2, "text": "Hello"}]
+    out, ok = tasks._translate_segments(object(), segments, "my", "en")
+    assert out == segments
+    assert ok is False
+    assert sleeps == [20.0]  # 2 attempts -> 1 sleep between them
+
+
+def test_translate_text_to_myanmar(monkeypatch):
+    import backend.celery_app.tasks as tasks
+
+    class _Manager:
+        def __init__(self, settings):
+            pass
+
+        async def complete(self, task, prompt, **kw):
+            assert "Myanmar" in prompt
+            assert "Hello world" in prompt
+            return ("မင်္ဂလာပါ ကမ္ဘာကြီး", "gemini")
+
+    monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
+    out, ok = tasks._translate_text(object(), "Hello world", "my", "en")
+    assert (out, ok) == ("မင်္ဂလာပါ ကမ္ဘာကြီး", True)
+
+
+def test_translate_text_skips_already_myanmar(monkeypatch):
+    import backend.celery_app.tasks as tasks
+
+    def _boom(*a, **kw):
+        raise AssertionError("provider must not be called")
+
+    monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _boom)
+    out, ok = tasks._translate_text(object(), "မင်္ဂလာပါ", "my", "en")
+    assert (out, ok) == ("မင်္ဂလာပါ", True)
+
+
+def test_translate_text_failure_reports_not_ok(monkeypatch):
+    import backend.celery_app.tasks as tasks
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    class _Manager:
+        def __init__(self, settings):
+            pass
+
+        async def complete(self, task, prompt, **kw):
+            raise RuntimeError("429 quota exceeded")
+
+    monkeypatch.setattr("backend.ai_provider.manager.ProviderManager", _Manager)
+    out, ok = tasks._translate_text(object(), "Hello world", "my", "en")
+    assert (out, ok) == ("Hello world", False)
+
+
+def test_contains_myanmar():
+    import backend.celery_app.tasks as tasks
+
+    assert tasks._contains_myanmar("မင်္ဂလာပါ") is True
+    assert tasks._contains_myanmar("Hello") is False
+    assert tasks._contains_myanmar("") is False

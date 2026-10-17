@@ -313,26 +313,60 @@ def ai_analyze(self, job_id: str):
         db.close()
 
 
+def _complete_with_retry(settings, prompt: str, *, json_mode: bool,
+                        max_tokens: int, attempts: int = 2,
+                        sleep_sec: float = 20.0) -> str:
+    """One provider text call with retries.
+
+    Each attempt waits out the shared Gemini quota cooldown first
+    (inside the provider); between attempts we sleep so a per-minute
+    quota window can reset. Raises the last error when all attempts
+    fail. Only used for translation, where a wait is cheaper than
+    shipping the wrong language."""
+    import asyncio  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
+
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            out = asyncio.run(ProviderManager(settings).complete(
+                "summary", prompt, json_mode=json_mode, max_tokens=max_tokens))
+            return out[0] if isinstance(out, tuple) else out
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < attempts:
+                log.warning("translation attempt %d/%d failed, retrying in %.0fs: %s",
+                            attempt, attempts, sleep_sec, exc)
+                time.sleep(sleep_sec)
+    assert last_exc is not None
+    raise last_exc
+
+
+def _contains_myanmar(text: str) -> bool:
+    return any("\u1000" <= ch <= "\u109f" for ch in (text or ""))
+
+
 def _translate_segments(settings, segments: list[dict], target_lang: str,
-                        source_lang: str | None) -> list[dict]:
+                        source_lang: str | None) -> tuple[list[dict], bool]:
     """Translate subtitle segment texts to target_lang, keeping timestamps.
 
     Skips translation when the detected source language already matches
-    the target. Returns the original segments on ANY failure (bad JSON,
-    wrong count, provider error) — subtitles must never fail a render.
+    the target. Returns (segments, ok): ok is False when translation
+    was needed but every attempt failed — the caller surfaces that as
+    a visible warning instead of silently shipping the wrong language.
+    Translation must never fail a render.
     """
     target = {"my": "Myanmar (Burmese)", "en": "English"}.get(target_lang)
     if target is None or not segments:
-        return segments
+        return segments, True
     src = (source_lang or "").lower()
     if (target_lang == "my" and src in ("my", "mya", "myanmar", "burmese")) or \
        (target_lang == "en" and src in ("en", "eng", "english")):
-        return segments
+        return segments, True
     try:
-        import asyncio  # noqa: PLC0415
         import json  # noqa: PLC0415
-
-        from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
 
         texts = [str(s.get("text", "")) for s in segments]
         prompt = (
@@ -341,9 +375,7 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
             "count as the input. Keep each line short and natural; do not "
             "add explanations.\nInput:\n"
             + json.dumps([{"text": t} for t in texts], ensure_ascii=False))
-        out = asyncio.run(ProviderManager(settings).complete(
-            "summary", prompt, json_mode=True, max_tokens=8000))
-        text = out[0] if isinstance(out, tuple) else out
+        text = _complete_with_retry(settings, prompt, json_mode=True, max_tokens=8000)
         # Gemini often wraps JSON in ```json fences — plain json.loads
         # would fail and silently fall back to the untranslated text.
         try:
@@ -361,11 +393,46 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
         for seg, tr in zip(segments, translated, strict=True):
             result.append({**seg, "text": str(tr.get("text", seg.get("text", "")))})
         log.info("subtitles translated to %s: %d segments", target_lang, len(result))
-        return result
+        return result, True
     except Exception as exc:
         log.warning("subtitle translation to %s failed, keeping original: %s",
                     target_lang, exc)
-        return segments
+        return segments, False
+
+
+def _translate_text(settings, text: str, target_lang: str,
+                    source_lang: str | None) -> tuple[str, bool]:
+    """Translate one free-text passage (TTS narration) to target_lang.
+
+    Returns (text, ok). Skips when the text already looks like the
+    target language. On failure returns the original text with
+    ok=False so the caller can warn instead of silently speaking
+    the wrong language."""
+    target = {"my": "Myanmar (Burmese)", "en": "English"}.get(target_lang)
+    if target is None or not (text or "").strip():
+        return text, True
+    if target_lang == "my" and _contains_myanmar(text):
+        return text, True
+    if target_lang == "en" and text.isascii():
+        return text, True
+    src = (source_lang or "").lower()
+    if (target_lang == "my" and src in ("my", "mya", "myanmar", "burmese")) or \
+       (target_lang == "en" and src in ("en", "eng", "english")):
+        return text, True
+    try:
+        prompt = (
+            f"Translate the following text to {target}. Return ONLY the "
+            f"translated text, no explanations, no quotes.\n\n{text}")
+        out = _complete_with_retry(settings, prompt, json_mode=False, max_tokens=4000)
+        translated = (out or "").strip()
+        if not translated:
+            raise ValueError("empty translation")
+        log.info("narration translated to %s: %d chars", target_lang, len(translated))
+        return translated, True
+    except Exception as exc:
+        log.warning("narration translation to %s failed, keeping original: %s",
+                    target_lang, exc)
+        return text, False
 
 
 def _narration_text(summary: dict, transcript: list[dict]) -> str:
@@ -427,13 +494,16 @@ def render_recap(self, job_id: str):
         # so "Myanmar subtitles" came out in English. Translate the
         # segments (timestamps preserved) when needed; "none" means no
         # subtitles at all. Translation never fails the job — on any
-        # error the original text is used.
+        # failure the original text is used AND a warning is surfaced
+        # on the result page (no silent wrong-language subtitles).
         subtitle_lang = job.subtitle_language or "my"
+        subtitles_failed = False
         if subtitle_lang == "none":
             transcript = []
         elif transcript and subtitle_lang in ("my", "en"):
-            transcript = _translate_segments(
+            transcript, subtitles_ok = _translate_segments(
                 settings, transcript, subtitle_lang, speech_lang)
+            subtitles_failed = not subtitles_ok
 
         set_job_progress(db, job_id, stage="rendering", progress=85.0,
                          message="Rendering recap video…", status="rendering")
@@ -449,12 +519,23 @@ def render_recap(self, job_id: str):
         intro_text, outro_text = _intro_outro_texts(prefs, summary)
         voice_mode = prefs.get("voice_mode", "original")
         narration_text = ""
+        narration_failed = False
         tts_kwargs: dict = {}
         if voice_mode == "tts":
             # Narration = the recap summary in the recap language.
             # Falls back to key points / transcript when the summary
             # step failed, so TTS still runs (see _narration_text).
+            # The fallback is usually ENGLISH (the transcript language)
+            # while the user asked for Myanmar speech — Thiha reading
+            # English text is NOT a Myanmar voiceover. Translate the
+            # narration to the job's output language first; if that
+            # fails, warn visibly instead of silently speaking English.
             narration_text = _narration_text(summary, transcript)
+            output_lang = job.output_lang or "my"
+            if narration_text.strip() and output_lang in ("my", "en"):
+                narration_text, narration_ok = _translate_text(
+                    settings, narration_text, output_lang, speech_lang)
+                narration_failed = not narration_ok
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),
                 "tts_voice": prefs.get("tts_voice", "thiha"),
@@ -479,6 +560,19 @@ def render_recap(self, job_id: str):
             msg = "; ".join(result.errors) or "render failed"
             _fail_job(db, job_id, "rendering", msg, user_id=job.user_id)
             return
+
+        # Surface translation failures as result-page warnings: a
+        # wrong-language subtitle track or narration must never be
+        # presented as if it were the language the user selected.
+        if subtitles_failed:
+            sub_name = {"my": "Myanmar", "en": "English"}.get(subtitle_lang, subtitle_lang)
+            result.warnings.append(
+                f"subtitles not translated to {sub_name}; showing original language")
+        if narration_failed:
+            narr_name = {"my": "Myanmar", "en": "English"}.get(
+                job.output_lang or "my", job.output_lang or "my")
+            result.warnings.append(
+                f"narration not translated to {narr_name}; speaking original text")
 
         # store outputs via the storage backend
         from backend.storage import get_storage  # noqa: PLC0415

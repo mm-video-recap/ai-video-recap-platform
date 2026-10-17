@@ -12,6 +12,15 @@ from backend.ai_provider.manager import GeminiProvider, ProviderError, ProviderM
 from backend.config import Settings
 
 
+@pytest.fixture(autouse=True)
+def _reset_quota_cooldown():
+    # Cooldown is CLASS-level (shared across instances): reset it so
+    # one test's exhaustion never makes another test wait.
+    GeminiProvider._quota_cooldown_until = 0.0
+    yield
+    GeminiProvider._quota_cooldown_until = 0.0
+
+
 def _gemini_ok_body(text: str = "hello recap") -> dict:
     return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
 
@@ -162,7 +171,8 @@ def test_next_call_waits_out_cooldown(monkeypatch):
     provider = GeminiProvider(Settings())
     provider._client = lambda **kw: httpx.AsyncClient(
         transport=httpx.MockTransport(_ok))
-    provider._quota_cooldown_until = _time.monotonic() + 60.0
+    # Cooldown is class-level: set it on the class, not the instance.
+    GeminiProvider._quota_cooldown_until = _time.monotonic() + 60.0
     sleeps: list[float] = []
 
     async def _fake_sleep(seconds: float) -> None:
@@ -170,5 +180,35 @@ def test_next_call_waits_out_cooldown(monkeypatch):
 
     provider._sleep = _fake_sleep  # type: ignore[method-assign]
     out = asyncio.run(provider.generate_text("hi"))
+    assert out == "done"
+    assert sleeps and sleeps[0] == pytest.approx(60.0, abs=1.0)
+
+
+def test_cooldown_shared_across_instances(monkeypatch):
+    """A fresh provider instance must honour a cooldown set by another
+    instance in the same process (live 2026-10-17: summary exhausted
+    the quota, then a fresh manager's translation call failed
+    instantly instead of waiting)."""
+    import time as _time
+
+    def _ok(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": "done"}]}}]})
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k1")
+    first = GeminiProvider(Settings())
+    first._mark_quota_exhausted()
+    assert GeminiProvider._quota_cooldown_until > _time.monotonic()
+
+    second = GeminiProvider(Settings())
+    second._client = lambda **kw: httpx.AsyncClient(
+        transport=httpx.MockTransport(_ok))
+    sleeps: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    second._sleep = _fake_sleep  # type: ignore[method-assign]
+    out = asyncio.run(second.generate_text("hi"))
     assert out == "done"
     assert sleeps and sleeps[0] == pytest.approx(60.0, abs=1.0)

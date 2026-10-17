@@ -37,10 +37,25 @@ class RenderResult:
 
 
 _FONT_CANDIDATES = [
+    # Bundled Myanmar font (SIL OFL) — shipped in the repo so the
+    # Railway image (which installs NO fonts at all) can render
+    # Myanmar subtitles. DejaVu/Liberation have NO Myanmar glyphs:
+    # burning Myanmar text with them produces tofu boxes.
+    "/app/backend/assets/fonts/Padauk-Regular.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansMyanmar-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
 ]
+
+# ASS Fontname for a font file, so the burn-in filter uses a font
+# that actually covers the subtitle script. Unknown fonts -> None
+# (burn-in proceeds with libass default font selection).
+_FONT_FAMILY_BY_STEM = {
+    "Padauk-Regular": "Padauk",
+    "NotoSansMyanmar-Regular": "Noto Sans Myanmar",
+    "DejaVuSans": "DejaVu Sans",
+    "LiberationSans-Regular": "Liberation Sans",
+}
 
 
 class RenderingAgent:
@@ -55,6 +70,11 @@ class RenderingAgent:
                               timeout=timeout, check=False)
 
     def _find_font(self) -> Path | None:
+        # Bundled font first: resolve relative to this file so it works
+        # in the container (/app/backend/...), in local dev, and in tests.
+        bundled = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "Padauk-Regular.ttf"
+        if bundled.exists():
+            return bundled
         for cand in _FONT_CANDIDATES:
             if Path(cand).exists():
                 return Path(cand)
@@ -71,6 +91,29 @@ class RenderingAgent:
             except Exception:
                 pass
         return None
+
+    @staticmethod
+    def _font_family(font: Path) -> str | None:
+        return _FONT_FAMILY_BY_STEM.get(font.stem)
+
+    def _subtitle_vf(self, srt_path: Path, font: Path) -> str:
+        """libass burn-in filter. force_style pins the Fontname to the
+        font we found: without it libass falls back to its default
+        style font (usually a Latin-only font), and Myanmar cues come
+        out as tofu boxes even when a Myanmar font sits in fontsdir.
+        Only Fontname/size/outline are forced; everything else keeps
+        libass defaults. Verified locally: Padauk + libass shapes
+        Myanmar correctly (e-vowel in front, stacks combined)."""
+        family = self._font_family(font)
+        vf = f"subtitles={srt_path}:fontsdir={font.parent}"
+        if family:
+            vf += (
+                ":force_style='Fontname=" + family +
+                ",Fontsize=24,PrimaryColour=&H00FFFFFF,"
+                "OutlineColour=&H80000000,BorderStyle=1,Outline=2,"
+                "Shadow=0,MarginV=28'"
+            )
+        return vf
 
     def _remap_transcript(self, transcript: list[dict], highlights: list[dict],
                          intro_enabled: bool, outro_enabled: bool) -> list[dict]:
@@ -303,7 +346,7 @@ class RenderingAgent:
             final = workdir / "recap_final.mp4"
             font = self._find_font()
             if font and srt_path.stat().st_size > 0:
-                vf = f"subtitles={srt_path}:fontsdir={font.parent}"
+                vf = self._subtitle_vf(srt_path, font)
                 p = self._run([self.ffmpeg, "-y", "-i", str(joined),
                                "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
                                "-crf", "23", "-c:a", "copy",

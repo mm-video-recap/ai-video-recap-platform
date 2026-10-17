@@ -146,6 +146,15 @@ class GeminiProvider(AIProvider):
     # Inline-audio chunk size for transcription (seconds of 16 kHz mono
     # WAV per generateContent call).
     _TRANSCRIBE_CHUNK_SEC = 300
+    # Monotonic timestamp until which Gemini calls must wait.
+    # CLASS-level (shared by every provider instance in this process):
+    # a fresh ProviderManager is built for almost every call
+    # (summary, then translation, ...), so an instance-level cooldown
+    # was forgotten between calls and translation failed instantly
+    # after summary had just exhausted the quota (live 2026-10-17).
+    # Note: this does NOT cross Celery worker processes — the
+    # translation retry loop in tasks.py covers that case.
+    _quota_cooldown_until: float = 0.0
 
     def __init__(self, settings: Settings, transport=None, keys: list[str] | None = None):
         super().__init__(settings, transport)
@@ -160,20 +169,20 @@ class GeminiProvider(AIProvider):
         # Instantly cycling keys on 429 is therefore futile hammering:
         # after a full exhaustion, the next call waits out a cooldown so
         # the per-minute window can reset instead of re-burning all keys.
-        self._quota_cooldown_until: float = 0.0
+        # (Cooldown state itself lives on the CLASS — see above.)
 
     async def _sleep(self, seconds: float) -> None:
         """Overridable sleep (tests stub this to avoid real waits)."""
         await asyncio.sleep(seconds)
 
     async def _wait_quota_cooldown(self) -> None:
-        remaining = self._quota_cooldown_until - time.monotonic()
+        remaining = type(self)._quota_cooldown_until - time.monotonic()
         if remaining > 0:
             log.info("gemini: quota cooldown, waiting %.0fs", remaining)
             await self._sleep(min(remaining, 60.0))
 
     def _mark_quota_exhausted(self) -> None:
-        self._quota_cooldown_until = time.monotonic() + 60.0
+        type(self)._quota_cooldown_until = time.monotonic() + 60.0
 
     @property
     def configured(self) -> bool:
