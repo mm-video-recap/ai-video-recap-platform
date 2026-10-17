@@ -127,10 +127,6 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  tts_voice: str = Query(default="thiha"),
                  tts_rate: float = Query(default=1.0, ge=0.5, le=2.0),
                  tts_pitch: int = Query(default=0, ge=-20, le=20),
-                 # Custom intro/outro card text (empty = defaults: recap
-                 # title for intro, "Thanks for watching" for outro).
-                 intro_text: str = Query(default="", max_length=200),
-                 outro_text: str = Query(default="", max_length=200),
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     settings = get_settings()
@@ -249,8 +245,6 @@ def upload_video(request: Request, file: UploadFile = File(...),
             tts_voice=tts_voice,
             tts_rate=tts_rate,
             tts_pitch=tts_pitch,
-            intro_text=intro_text,
-            outro_text=outro_text,
             intro_video_key=intro_video_key,
             outro_video_key=outro_video_key,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)

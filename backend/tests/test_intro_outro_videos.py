@@ -13,16 +13,76 @@ import pytest
 from fastapi import HTTPException
 
 
-def _make_clip(path, color, dur, with_audio=True):
+def _make_clip(path, color, dur, with_audio=True, channels=1):
     cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i",
            f"color=c={color}:s=640x360:d={dur}:r=30"]
     if with_audio:
         cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:d={dur}"]
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
     if with_audio:
-        cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+        cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", str(channels), "-shortest"]
     cmd += [str(path)]
     subprocess.run(cmd, capture_output=True, timeout=60, check=True)
+
+
+def _audio_channels(path):
+    import json
+
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=channels", "-of", "json", str(path)],
+        capture_output=True, text=True, timeout=30, check=True)
+    streams = json.loads(out.stdout).get("streams", [])
+    return streams[0]["channels"] if streams else None
+
+
+def _decodes_clean(path):
+    p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path),
+                        "-f", "null", "-"],
+                       capture_output=True, text=True, timeout=120)
+    return p.returncode == 0
+
+
+def test_render_mono_side_videos_with_stereo_main_stays_stereo(tmp_path):
+    """REGRESSION (live 2026-10-17): a MONO intro/outro + STEREO main
+    clip produced a broken mixed-layout concat — the result showed
+    0:00/black and would not play. Every part must be forced to
+    stereo 44100 Hz AAC so the concat stays uniform."""
+    from backend.agents.agent07_rendering import RenderingAgent
+
+    main = tmp_path / "main.mp4"
+    intro = tmp_path / "intro.mp4"
+    outro = tmp_path / "outro.mp4"
+    _make_clip(main, "0x1a2b4a", 4, channels=2)   # stereo phone-style main
+    _make_clip(intro, "0xff0000", 1.5)             # mono side videos
+    _make_clip(outro, "0x00ff00", 1.0)
+    agent = RenderingAgent(tmp_path / "results")
+    res = agent.render(main, [{"start": 0, "end": 4}], [], "Title", "j1",
+                       intro_enabled=True, outro_enabled=True,
+                       intro_clip=intro, outro_clip=outro)
+    assert res.ok, res.errors
+    assert _audio_channels(res.video_path) == 2
+    assert _decodes_clean(res.video_path)
+
+
+def test_render_mono_main_with_stereo_side_videos_stays_stereo(tmp_path):
+    """Same rule in the other direction: a mono SOURCE video must not
+    break the concat either (clip cut forces stereo)."""
+    from backend.agents.agent07_rendering import RenderingAgent
+
+    main = tmp_path / "main.mp4"
+    intro = tmp_path / "intro.mp4"
+    outro = tmp_path / "outro.mp4"
+    _make_clip(main, "0x1a2b4a", 4, channels=1)   # mono source
+    _make_clip(intro, "0xff0000", 1.5, channels=2)
+    _make_clip(outro, "0x00ff00", 1.0, channels=2)
+    agent = RenderingAgent(tmp_path / "results")
+    res = agent.render(main, [{"start": 0, "end": 4}], [], "Title", "j1",
+                       intro_enabled=True, outro_enabled=True,
+                       intro_clip=intro, outro_clip=outro)
+    assert res.ok, res.errors
+    assert _audio_channels(res.video_path) == 2
+    assert _decodes_clean(res.video_path)
 
 
 def test_render_uses_intro_outro_video_clips(tmp_path):

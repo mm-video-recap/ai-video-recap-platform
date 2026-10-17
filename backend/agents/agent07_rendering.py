@@ -215,18 +215,25 @@ class RenderingAgent:
         src_has_audio = self._has_audio(src)
         vf = ("scale=1280:720:force_original_aspect_ratio=decrease,"
               "pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=30")
+        # Audio MUST be stereo 44100 Hz AAC in every part: the concat
+        # step copies streams as-is and takes its layout from the FIRST
+        # segment, so a mono intro/outro (e.g. a voice-memo clip) would
+        # mangle the stereo recap audio into a broken mono stream and
+        # wreck the output timestamps (live 2026-10-17: result video
+        # showed 0:00/black and would not play).
+        audio_args = ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
         if src_has_audio or not has_audio:
             cmd = [self.ffmpeg, "-y", "-i", str(src), "-vf", vf,
                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]
             if src_has_audio:
-                cmd += ["-c:a", "aac", "-b:a", "128k"]
+                cmd += audio_args
             cmd += [str(out)]
         else:
             cmd = [self.ffmpeg, "-y", "-i", str(src),
                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
                    "-vf", vf,
                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-                   "-c:a", "aac", "-b:a", "128k", "-shortest", str(out)]
+                   *audio_args, "-shortest", str(out)]
         p = self._run(cmd, timeout=300)
         if p.returncode == 0 and out.exists():
             dur = self._duration(out) or 0.0
@@ -295,7 +302,9 @@ class RenderingAgent:
             # whether the source has audio, and build every part to match.
             has_audio = self._has_audio(src)
 
-            # 1) cut clips
+            # 1) cut clips. Audio is forced to stereo 44100 Hz AAC (see
+            # _normalize_video_clip): a mono source would otherwise
+            # break the -c copy concat the same way a mono intro did.
             clips: list[Path] = []
             for i, hl in enumerate(highlights):
                 clip = workdir / f"clip_{i:02d}.mp4"
@@ -304,7 +313,7 @@ class RenderingAgent:
                        "-i", str(src),
                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
                 if has_audio:
-                    cmd += ["-c:a", "aac", "-b:a", "128k"]
+                    cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
                 cmd += [str(clip)]
                 p = self._run(cmd, timeout=600)
                 if p.returncode == 0 and clip.exists():

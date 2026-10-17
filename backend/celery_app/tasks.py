@@ -476,14 +476,16 @@ def _narration_text(summary: dict, transcript: list[dict]) -> str:
 
 
 def _intro_outro_texts(prefs: dict, summary: dict) -> tuple[str | None, str | None]:
-    """Resolve intro/outro card text: custom user text wins, else defaults
-    (recap title / Thanks for watching). Disabled card -> None."""
+    """Resolve fallback text-card text (used when no intro/outro VIDEO
+    was uploaded): recap title for intro, Thanks for watching for
+    outro. Disabled card -> None. There is no custom-text input any
+    more — intro/outro are uploaded videos, not typed text."""
     intro = None
     if prefs.get("intro_enabled", True):
-        intro = (prefs.get("intro_text") or "").strip() or summary.get("title", "Video Recap")
+        intro = summary.get("title", "Video Recap")
     outro = None
     if prefs.get("outro_enabled", True):
-        outro = (prefs.get("outro_text") or "").strip() or "Thanks for watching — AI Video Recap"
+        outro = "Thanks for watching — AI Video Recap"
     return intro, outro
 
 

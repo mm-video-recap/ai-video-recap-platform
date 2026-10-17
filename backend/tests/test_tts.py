@@ -325,15 +325,10 @@ def test_intro_outro_text_resolution():
     import backend.celery_app.tasks as tasks
 
     summary = {"title": "Recap Title"}
-    # Custom text wins.
+    # No custom text exists any more — intro/outro are uploaded videos;
+    # the fallback card always uses the defaults.
     assert tasks._intro_outro_texts(
-        {"intro_enabled": True, "intro_text": "My Intro",
-         "outro_enabled": True, "outro_text": "My Outro"}, summary) == (
-        "My Intro", "My Outro")
-    # Empty custom text -> defaults.
-    assert tasks._intro_outro_texts(
-        {"intro_enabled": True, "intro_text": "",
-         "outro_enabled": True, "outro_text": "  "}, summary) == (
+        {"intro_enabled": True, "outro_enabled": True}, summary) == (
         "Recap Title", "Thanks for watching — AI Video Recap")
     # Disabled -> None (card dropped).
     assert tasks._intro_outro_texts(
@@ -343,7 +338,7 @@ def test_intro_outro_text_resolution():
         "Recap Title", "Thanks for watching — AI Video Recap")
 
 
-def test_persist_ingestion_stores_intro_outro_text():
+def test_persist_ingestion_stores_no_intro_outro_text():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -361,9 +356,9 @@ def test_persist_ingestion_stores_intro_outro_text():
         metadata={"original_name": "a.mp4", "duration_sec": 10.0,
                   "size_bytes": 100, "sha256_prefix": "ab"})
     persist_ingestion(db, res, user_id="u1",
-                      storage_path="uploads/v1/original.mp4",
-                      intro_text="Hello Intro", outro_text="Bye Outro")
+                      storage_path="uploads/v1/original.mp4")
     db.commit()
     video = db.query(Video).filter_by(id="v1").one()
-    assert video.meta["intro_text"] == "Hello Intro"
-    assert video.meta["outro_text"] == "Bye Outro"
+    # Custom intro/outro text is gone — intro/outro are uploaded videos.
+    assert "intro_text" not in video.meta
+    assert "outro_text" not in video.meta
