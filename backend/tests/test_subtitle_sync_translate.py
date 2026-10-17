@@ -38,7 +38,7 @@ def test_translate_segments_to_myanmar(monkeypatch):
     import backend.celery_app.tasks as tasks
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):
@@ -69,7 +69,7 @@ def test_translate_segments_falls_back_on_bad_json(monkeypatch):
     import backend.celery_app.tasks as tasks
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):
@@ -92,7 +92,7 @@ def test_translate_segments_retries_after_quota_error(monkeypatch):
     calls = {"n": 0}
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):
@@ -117,7 +117,7 @@ def test_translate_segments_gives_up_after_retries(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):
@@ -135,7 +135,7 @@ def test_translate_text_to_myanmar(monkeypatch):
     import backend.celery_app.tasks as tasks
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):
@@ -165,7 +165,7 @@ def test_translate_text_failure_reports_not_ok(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
 
     class _Manager:
-        def __init__(self, settings):
+        def __init__(self, settings, user_keys=None):
             pass
 
         async def complete(self, task, prompt, **kw):

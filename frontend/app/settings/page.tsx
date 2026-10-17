@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
-import { loadPreferences, loadTranscriptionPrefs, saveTranscriptionPrefs } from "@/lib/utils";
+import { loadPreferences, loadTranscriptionPrefs, saveTranscriptionPrefs, loadAiKeys, saveAiKeys } from "@/lib/utils";
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
 import LanguageToggle from "@/components/LanguageToggle";
@@ -22,6 +22,8 @@ function SettingsContent() {
   const [defaultLanguage, setDefaultLanguage] = useState<"my" | "en">("my");
   const [transProvider, setTransProvider] = useState<TranscriptionProvider>("auto");
   const [transKey, setTransKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
 
   useEffect(() => {
     const p = loadPreferences();
@@ -34,6 +36,9 @@ function SettingsContent() {
     const tp = loadTranscriptionPrefs();
     setTransProvider(tp.provider);
     setTransKey(tp.key);
+    const ak = loadAiKeys();
+    setGeminiKey(ak.geminiKey);
+    setGroqKey(ak.groqKey);
   }, []);
 
   const save = () => {
@@ -43,6 +48,7 @@ function SettingsContent() {
         JSON.stringify({ summaryStyle, defaultLanguage })
       );
       saveTranscriptionPrefs(transProvider, transKey);
+      saveAiKeys({ geminiKey, groqKey });
       toast(t("settings.saved"), "success");
     } catch {
       toast(t("errors.generic"), "error");
@@ -138,6 +144,37 @@ function SettingsContent() {
                 <p className="mt-2 text-xs text-[var(--muted)]">{t("settings.transcriptionKeyHint")}</p>
               </div>
             )}
+            <Button onClick={save}>💾 {t("common.save")}</Button>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="text-lg font-bold">{t("settings.aiKeysTitle")}</h2>
+          <p className="mb-5 mt-1 text-sm text-[var(--muted)]">{t("settings.aiKeysDesc")}</p>
+          <div className="space-y-5">
+            <div>
+              <span className="label-text">{t("settings.aiKeysGemini")}</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                placeholder={t("settings.aiKeysGeminiPlaceholder")}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <span className="label-text">{t("settings.aiKeysGroq")}</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={groqKey}
+                onChange={(e) => setGroqKey(e.target.value)}
+                placeholder={t("settings.aiKeysGroqPlaceholder")}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm outline-none focus:border-indigo-500"
+              />
+            </div>
+            <p className="text-xs text-[var(--muted)]">{t("settings.aiKeysHint")}</p>
             <Button onClick={save}>💾 {t("common.save")}</Button>
           </div>
         </Card>

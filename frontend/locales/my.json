@@ -461,6 +461,13 @@
     "transcriptionKey": "ကိုယ့် API Key",
     "transcriptionKeyPlaceholder": "API key ရိုက်ထည့်ပါ",
     "transcriptionKeyHint": "Key ကို browser မှာပဲ သိမ်းပြီး upload တိုင်း form field အနေနဲ့ ပို့တယ် (URL ထဲမှာ မပါဘူး)။ ဆာဗာမှာလည်း encrypt လုပ်ပြီး သိမ်းတယ်။",
+    "aiKeysTitle": "ကိုယ့် AI Key များ (Summary / Vision / ဘာသာပြန်)",
+    "aiKeysDesc": "ကိုယ့် Gemini နဲ့ Groq key ကိုယ်တိုင် ထည့်ထားရင် အကျဉ်းချုပ်၊ vision၊ ဘာသာပြန်တွေက ကိုယ့် quota ကိုပဲ သုံးမယ်။ မထည့်ထားရင် ဆာဗာ key ကို သုံးမယ်။",
+    "aiKeysGemini": "ကိုယ့် Gemini API Key",
+    "aiKeysGeminiPlaceholder": "Gemini API key ရိုက်ထည့်ပါ",
+    "aiKeysGroq": "ကိုယ့် Groq API Key",
+    "aiKeysGroqPlaceholder": "Groq API key ရိုက်ထည့်ပါ",
+    "aiKeysHint": "Key တွေကို browser မှာပဲ သိမ်းပြီး upload တိုင်း form field အနေနဲ့ ပို့တယ် (URL ထဲမှာ မပါဘူး)။ ဆာဗာမှာလည်း encrypt လုပ်ပြီး သိမ်းတယ်။ Key မထည့်ထားတဲ့ provider က ဆာဗာ key ကို ဆက်သုံးမယ်။",
     "summaryStyleLabel": "ပုံမှန် အကျဉ်းချုပ် ပုံစံ",
     "title": "ဆက်တင်များ"
   },

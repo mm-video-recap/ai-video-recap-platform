@@ -64,6 +64,12 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  # Per-user (BYOK) transcription key: a FORM field, never a
                  # query param — query strings land in access logs.
                  transcription_key: str = Form(default=""),
+                 # Per-user (BYOK) AI keys for summary / vision /
+                 # translation: FORM fields, never query params. When
+                 # supplied, this job spends the user's own quota, never
+                 # the owner's. Empty = owner (env) keys, as before.
+                 gemini_key: str = Form(default=""),
+                 groq_key: str = Form(default=""),
                  # Voiceover: "original" keeps the source audio; "tts"
                  # replaces it with synthesized narration of the recap.
                  voice_mode: str = Query(default="original",
@@ -153,6 +159,19 @@ def upload_video(request: Request, file: UploadFile = File(...),
             except RuntimeError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
 
+        # Per-user AI keys: same encryption, same refusal.
+        gemini_key_enc = ""
+        groq_key_enc = ""
+        if gemini_key or groq_key:
+            from backend.security.keyvault import encrypt_key as _enc  # noqa: PLC0415
+            try:
+                if gemini_key:
+                    gemini_key_enc = _enc(gemini_key)
+                if groq_key:
+                    groq_key_enc = _enc(groq_key)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
         # TTS narration prefs: validate the voice now (400) rather than
         # silently falling back to original audio at render time.
         if voice_mode == "tts":
@@ -171,6 +190,8 @@ def upload_video(request: Request, file: UploadFile = File(...),
             outro_enabled=outro_enabled,
             transcription_provider=transcription_provider,
             transcription_key_enc=transcription_key_enc,
+            gemini_key_enc=gemini_key_enc,
+            groq_key_enc=groq_key_enc,
             voice_mode=voice_mode,
             tts_provider=tts_provider,
             tts_voice=tts_voice,

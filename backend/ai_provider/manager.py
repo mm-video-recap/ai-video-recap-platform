@@ -673,15 +673,27 @@ class HuggingFaceProvider(AIProvider):
 
 # ---------------------------------------------------------------- Manager
 class ProviderManager:
-    """Routes AI tasks across providers with key rotation + fallback chain."""
+    """Routes AI tasks across providers with key rotation + fallback chain.
+
+    user_keys: per-user (BYOK) key overrides, e.g.
+    {"gemini": ["<user key>"], "groq": ["<user key>"]}. A provided list
+    REPLACES the owner keys for that provider — the job then spends
+    the user's own quota, never the owner's. Providers the user did
+    not supply a key for keep using the owner (env) keys."""
 
     def __init__(self, settings: Settings | None = None,
-                 transports: dict[str, httpx.BaseTransport] | None = None):
+                 transports: dict[str, httpx.BaseTransport] | None = None,
+                 user_keys: dict[str, list[str]] | None = None):
         self.settings = settings or get_settings()
         transports = transports or {}
+        user_keys = user_keys or {}
+        gemini_keys = user_keys.get("gemini") or None
+        groq_keys = user_keys.get("groq") or None
         self.providers: dict[str, AIProvider] = {
-            "gemini": GeminiProvider(self.settings, transports.get("gemini")),
-            "groq": GroqProvider(self.settings, transports.get("groq")),
+            "gemini": GeminiProvider(self.settings, transports.get("gemini"),
+                                      keys=gemini_keys),
+            "groq": GroqProvider(self.settings, transports.get("groq"),
+                                  keys=groq_keys),
             "openrouter": OpenRouterProvider(self.settings, transports.get("openrouter")),
             "huggingface": HuggingFaceProvider(self.settings, transports.get("huggingface")),
         }

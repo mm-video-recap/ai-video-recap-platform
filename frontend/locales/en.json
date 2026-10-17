@@ -461,6 +461,13 @@
     "transcriptionKey": "Your API key",
     "transcriptionKeyPlaceholder": "Paste your API key",
     "transcriptionKeyHint": "The key is kept in your browser and sent with each upload as a form field (never in the URL). The server stores it encrypted.",
+    "aiKeysTitle": "My AI Keys (Summary / Vision / Translation)",
+    "aiKeysDesc": "When you add your own Gemini and Groq keys, summary, vision, and translation spend your own quota. Without them, the server keys are used.",
+    "aiKeysGemini": "My Gemini API Key",
+    "aiKeysGeminiPlaceholder": "Paste your Gemini API key",
+    "aiKeysGroq": "My Groq API Key",
+    "aiKeysGroqPlaceholder": "Paste your Groq API key",
+    "aiKeysHint": "Keys are kept in your browser and sent with each upload as form fields (never in the URL). The server stores them encrypted. A provider with no key set keeps using the server key.",
     "summaryStyleLabel": "Default recap style",
     "title": "Settings"
   },

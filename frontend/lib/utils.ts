@@ -123,6 +123,36 @@ export function saveTranscriptionPrefs(provider: TranscriptionProvider, key: str
   window.localStorage.setItem("recap_transcription", JSON.stringify({ provider, key }));
 }
 
+/** Per-user AI keys (BYOK) for summary / vision / translation.
+ * Stored in localStorage only. The keys are sent with each upload as
+ * form fields (never query params) and stored encrypted server-side.
+ * When set, the job spends the user's own quota, never the owner's.
+ * Empty = owner (env) keys, as before. */
+export interface AiKeys {
+  geminiKey: string;
+  groqKey: string;
+}
+
+export function loadAiKeys(): AiKeys {
+  try {
+    const raw = window.localStorage.getItem("recap_ai_keys");
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        geminiKey: typeof p.geminiKey === "string" ? p.geminiKey : "",
+        groqKey: typeof p.groqKey === "string" ? p.groqKey : "",
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { geminiKey: "", groqKey: "" };
+}
+
+export function saveAiKeys(keys: AiKeys) {
+  window.localStorage.setItem("recap_ai_keys", JSON.stringify(keys));
+}
+
 /** Voiceover (TTS narration) preferences, stored in localStorage only. */
 export type VoiceMode = "original" | "tts";
 export type TtsProvider = "edge" | "gemini";

@@ -252,8 +252,15 @@ def ai_analyze(self, job_id: str):
             from backend.security.keyvault import decrypt_key  # noqa: PLC0415
             speech_key = decrypt_key(enc)
 
+        # Per-user AI keys (Settings -> upload form fields -> video.meta):
+        # when the user supplied their own Gemini/Groq keys, EVERY AI
+        # step of this job (speech, vision, summary, and later the
+        # render translations) spends the user's own quota, never the
+        # owner's. No user keys -> owner (env) keys, as before.
+        user_keys = _user_keys_from_prefs(prefs)
+
         from backend.ai_provider.manager import ProviderManager  # noqa: PLC0415
-        manager = ProviderManager(settings)
+        manager = ProviderManager(settings, user_keys=user_keys)
 
         # -- agent03 speech --
         set_job_progress(db, job_id, stage="transcribing", progress=35.0,
@@ -313,9 +320,32 @@ def ai_analyze(self, job_id: str):
         db.close()
 
 
+def _user_keys_from_prefs(prefs: dict) -> dict[str, list[str]]:
+    """Decrypt per-user (BYOK) AI keys from video.meta.
+
+    Returns {"gemini": [key]} / {"groq": [key]} for whichever keys the
+    user supplied at upload time. Empty dict = use owner (env) keys.
+    Keys live here only transiently and are never logged."""
+    from backend.security.keyvault import decrypt_key  # noqa: PLC0415
+
+    out: dict[str, list[str]] = {}
+    for provider, field in (("gemini", "gemini_key_enc"), ("groq", "groq_key_enc")):
+        enc = prefs.get(field)
+        if enc:
+            try:
+                key = decrypt_key(enc)
+            except Exception:
+                log.warning("could not decrypt %s user key; using owner key", provider)
+                continue
+            if key:
+                out[provider] = [key]
+    return out
+
+
 def _complete_with_retry(settings, prompt: str, *, json_mode: bool,
                         max_tokens: int, attempts: int = 2,
-                        sleep_sec: float = 20.0) -> str:
+                        sleep_sec: float = 20.0,
+                        user_keys: dict[str, list[str]] | None = None) -> str:
     """One provider text call with retries.
 
     Each attempt waits out the shared Gemini quota cooldown first
@@ -331,7 +361,8 @@ def _complete_with_retry(settings, prompt: str, *, json_mode: bool,
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            out = asyncio.run(ProviderManager(settings).complete(
+            out = asyncio.run(ProviderManager(
+                settings, user_keys=user_keys).complete(
                 "summary", prompt, json_mode=json_mode, max_tokens=max_tokens))
             return out[0] if isinstance(out, tuple) else out
         except Exception as exc:  # noqa: BLE001
@@ -349,7 +380,8 @@ def _contains_myanmar(text: str) -> bool:
 
 
 def _translate_segments(settings, segments: list[dict], target_lang: str,
-                        source_lang: str | None) -> tuple[list[dict], bool]:
+                        source_lang: str | None,
+                        user_keys: dict[str, list[str]] | None = None) -> tuple[list[dict], bool]:
     """Translate subtitle segment texts to target_lang, keeping timestamps.
 
     Skips translation when the detected source language already matches
@@ -375,7 +407,8 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
             "count as the input. Keep each line short and natural; do not "
             "add explanations.\nInput:\n"
             + json.dumps([{"text": t} for t in texts], ensure_ascii=False))
-        text = _complete_with_retry(settings, prompt, json_mode=True, max_tokens=8000)
+        text = _complete_with_retry(settings, prompt, json_mode=True, max_tokens=8000,
+                                  user_keys=user_keys)
         # Gemini often wraps JSON in ```json fences — plain json.loads
         # would fail and silently fall back to the untranslated text.
         try:
@@ -401,7 +434,8 @@ def _translate_segments(settings, segments: list[dict], target_lang: str,
 
 
 def _translate_text(settings, text: str, target_lang: str,
-                    source_lang: str | None) -> tuple[str, bool]:
+                    source_lang: str | None,
+                    user_keys: dict[str, list[str]] | None = None) -> tuple[str, bool]:
     """Translate one free-text passage (TTS narration) to target_lang.
 
     Returns (text, ok). Skips when the text already looks like the
@@ -423,7 +457,8 @@ def _translate_text(settings, text: str, target_lang: str,
         prompt = (
             f"Translate the following text to {target}. Return ONLY the "
             f"translated text, no explanations, no quotes.\n\n{text}")
-        out = _complete_with_retry(settings, prompt, json_mode=False, max_tokens=4000)
+        out = _complete_with_retry(settings, prompt, json_mode=False, max_tokens=4000,
+                                   user_keys=user_keys)
         translated = (out or "").strip()
         if not translated:
             raise ValueError("empty translation")
@@ -489,6 +524,12 @@ def render_recap(self, job_id: str):
         highlights = prev.get("highlights", [])
         speech_lang = (prev.get("speech", {}) or {}).get("language")
 
+        # Per-user AI keys (see ai_analyze): translations in this step
+        # also spend the user's own quota when they supplied keys.
+        _video = db.query(Video).filter_by(id=job.video_id).one_or_none()
+        user_keys = _user_keys_from_prefs(
+            (_video.meta or {}) if _video is not None else {})
+
         # Subtitle language (job.subtitle_language): the SRT must be IN
         # that language. Previously the raw transcript was written as-is,
         # so "Myanmar subtitles" came out in English. Translate the
@@ -502,7 +543,8 @@ def render_recap(self, job_id: str):
             transcript = []
         elif transcript and subtitle_lang in ("my", "en"):
             transcript, subtitles_ok = _translate_segments(
-                settings, transcript, subtitle_lang, speech_lang)
+                settings, transcript, subtitle_lang, speech_lang,
+                user_keys=user_keys)
             subtitles_failed = not subtitles_ok
 
         set_job_progress(db, job_id, stage="rendering", progress=85.0,
@@ -534,7 +576,8 @@ def render_recap(self, job_id: str):
             output_lang = job.output_lang or "my"
             if narration_text.strip() and output_lang in ("my", "en"):
                 narration_text, narration_ok = _translate_text(
-                    settings, narration_text, output_lang, speech_lang)
+                    settings, narration_text, output_lang, speech_lang,
+                    user_keys=user_keys)
                 narration_failed = not narration_ok
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),

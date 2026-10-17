@@ -16,6 +16,7 @@ import {
   getExtension,
   loadPreferences,
   loadTranscriptionPrefs,
+  loadAiKeys,
   loadVoicePrefs,
   saveVoicePrefs,
   type VoicePrefs,
@@ -143,6 +144,15 @@ function UploadContent() {
             return {
               transcription_provider: tp.provider,
               ...(tp.key ? { transcription_key: tp.key } : {}),
+            };
+          })(),
+          // Per-user AI keys from Settings (BYOK): form fields, never
+          // in the URL. When set, this job spends the user's own quota.
+          ...(() => {
+            const ak = loadAiKeys();
+            return {
+              ...(ak.geminiKey ? { gemini_key: ak.geminiKey } : {}),
+              ...(ak.groqKey ? { groq_key: ak.groqKey } : {}),
             };
           })(),
         }
