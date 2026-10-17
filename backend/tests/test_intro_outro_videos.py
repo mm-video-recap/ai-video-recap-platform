@@ -43,6 +43,40 @@ def _decodes_clean(path):
     return p.returncode == 0
 
 
+def _video_fps(path):
+    import json
+
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=r_frame_rate", "-of", "json", str(path)],
+        capture_output=True, text=True, timeout=30, check=True)
+    streams = json.loads(out.stdout).get("streams", [])
+    return streams[0]["r_frame_rate"] if streams else None
+
+
+def _has_faststart(path):
+    """True when the moov atom comes before mdat (moov at the front)."""
+    import struct
+
+    with open(path, "rb") as f:
+        data = f.read()
+    off = 0
+    order = []
+    while off + 8 <= len(data):
+        size = struct.unpack(">I", data[off:off + 4])[0]
+        typ = data[off + 4:off + 8].decode("latin1")
+        if size == 1:
+            size = struct.unpack(">Q", data[off + 8:off + 16])[0]
+        elif size == 0:
+            size = len(data) - off
+        order.append(typ)
+        if size <= 0:
+            break
+        off += size
+    return ("moov" in order and "mdat" in order
+            and order.index("moov") < order.index("mdat"))
+
+
 def test_render_mono_side_videos_with_stereo_main_stays_stereo(tmp_path):
     """REGRESSION (live 2026-10-17): a MONO intro/outro + STEREO main
     clip produced a broken mixed-layout concat — the result showed
@@ -63,6 +97,11 @@ def test_render_mono_side_videos_with_stereo_main_stays_stereo(tmp_path):
     assert res.ok, res.errors
     assert _audio_channels(res.video_path) == 2
     assert _decodes_clean(res.video_path)
+    assert _video_fps(res.video_path) == "30/1"
+    assert _has_faststart(res.video_path)
+    # Final normalize: uniform 30fps header + moov at the front.
+    assert _video_fps(res.video_path) == "30/1"
+    assert _has_faststart(res.video_path)
 
 
 def test_render_mono_main_with_stereo_side_videos_stays_stereo(tmp_path):

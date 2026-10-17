@@ -451,6 +451,32 @@ class RenderingAgent:
             if not final.exists():
                 res.errors.append("final render output missing")
                 return res
+
+            # 4) final normalize — concat (-c copy) + burn can leave
+            # irregular frame durations and a wrong header fps (live
+            # 2026-10-17: output header read 59.94fps though every
+            # part was 30fps; the result showed 0:00/black and would
+            # not play in browsers). One uniform re-encode pass
+            # guarantees a clean, browser-playable file: constant
+            # 30fps, yuv420p, stereo AAC, moov at the front.
+            normed = workdir / "recap_final_norm.mp4"
+            cmd = [self.ffmpeg, "-y", "-i", str(final),
+                   "-vf", "fps=30,format=yuv420p",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+            if self._has_audio(final):
+                cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
+            else:
+                cmd += ["-an"]
+            cmd += ["-movflags", "+faststart", str(normed)]
+            p = self._run(cmd, timeout=600)
+            if p.returncode == 0 and normed.exists():
+                shutil.copyfile(normed, final)
+            else:
+                res.warnings.append(
+                    "final normalize failed; kept concat output")
+                log.warning("final normalize failed job=%s: %s",
+                            job_id, p.stderr[-300:])
+
             res.video_path = str(final)
             res.ok = True
             log.info("render ok job=%s mode=%s clips=%d", job_id,
