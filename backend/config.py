@@ -105,7 +105,12 @@ class Settings(BaseSettings):
     # --- AI providers (keys live ONLY in env; never in code) ---
     GEMINI_MODEL: str = "gemini-3.8-flash"
     GEMINI_TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # Groq retired llama-3.3-70b-versatile for free/Developer tiers on
+    # 2026-08-16 (Enterprise-only after that) — the old default failed
+    # every summary/translation with HTTP 404 model_not_found (live
+    # 2026-10-18). gpt-oss-120b is Groq's current self-serve replacement.
+    # Override via env GROQ_MODEL if Groq retires this one too.
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     # Groq free-tier vision model (researched 2026-10-17; Groq retires
     # vision models without notice — override via env, do NOT hard-code
     # a new default without checking Groq's rate-limit page).

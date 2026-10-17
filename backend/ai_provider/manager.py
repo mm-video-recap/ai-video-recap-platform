@@ -545,32 +545,40 @@ class GroqProvider(_OpenAICompatProvider):
                 {"type": "image_url",
                  "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
             ]}],
-            "max_tokens": 512,
+            "max_tokens": 256,
         }
         last_exc: Exception | None = None
         for key in keys:
-            try:
-                async with self._client() as client:
-                    resp = await client.post(
-                        f"{self.api_base}/chat/completions",
-                        headers={"Authorization": f"Bearer {key}"},
-                        json=payload, timeout=180)
-                if resp.status_code != 200:
-                    if self._looks_like_quota(resp.text, resp.status_code):
-                        last_exc = ProviderError(resp.text[:300], status=resp.status_code,
-                                                 retryable=True)
-                        continue
-                    raise ProviderError(f"groq vision HTTP {resp.status_code}: {resp.text[:300]}",
-                                        status=resp.status_code)
-                data = resp.json()
-                text = data["choices"][0]["message"]["content"].strip()
-                if not text:
-                    raise ProviderError("groq vision returned empty response")
-                return {"description": text}
-            except ProviderError:
-                raise
-            except (httpx.HTTPError, ValueError, KeyError) as exc:
-                last_exc = exc
+            # One 429 retry per key: Groq's free tier caps vision output
+            # tokens/minute (1000 OTPM). Parallel frames burst over it;
+            # Groq itself says "try again in ~13s", so wait 15s once.
+            for attempt in range(2):
+                try:
+                    async with self._client() as client:
+                        resp = await client.post(
+                            f"{self.api_base}/chat/completions",
+                            headers={"Authorization": f"Bearer {key}"},
+                            json=payload, timeout=180)
+                    if resp.status_code != 200:
+                        if resp.status_code == 429 and attempt == 0:
+                            await asyncio.sleep(15)
+                            continue
+                        if self._looks_like_quota(resp.text, resp.status_code):
+                            last_exc = ProviderError(resp.text[:300], status=resp.status_code,
+                                                     retryable=True)
+                            break
+                        raise ProviderError(f"groq vision HTTP {resp.status_code}: {resp.text[:300]}",
+                                            status=resp.status_code)
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"].strip()
+                    if not text:
+                        raise ProviderError("groq vision returned empty response")
+                    return {"description": text}
+                except ProviderError:
+                    raise
+                except (httpx.HTTPError, ValueError, KeyError) as exc:
+                    last_exc = exc
+                    break
         raise ProviderError(f"groq vision: all keys failed: {last_exc}")
 
 
