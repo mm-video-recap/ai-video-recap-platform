@@ -162,6 +162,12 @@ def is_owner(user: User) -> bool:
 def check_fair_use(db: Session, user: User, settings: Settings,
                    estimated_seconds: float | None = None) -> None:
     """Enforce the free-tier fair-use caps. Raises 429 when exceeded."""
+    # Owner is exempt from fair-use caps: the owner's own jobs spend
+    # the owner's own server keys/quota, and owner testing must never
+    # eat the 5/day cap (live 2026-10-18: self-tests filled all 5
+    # slots and blocked the next test). Other users still get the caps.
+    if is_owner(user):
+        return
     today = _today_utc()
 
     # Failed uploads do NOT consume quota: the user got no result, so

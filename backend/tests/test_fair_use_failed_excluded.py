@@ -47,6 +47,37 @@ def test_processing_job_video_counts():
         check_fair_use(db, user, settings)
 
 
+def test_owner_exempt_from_fair_use_caps(monkeypatch):
+    """Owner uploads never trip the caps (live 2026-10-18: 5 self-test
+    uploads filled the 5/day cap and blocked the next test)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.database import Base
+
+    monkeypatch.setenv("OWNER_EMAIL", "owner@dev.local")
+    get_settings.cache_clear()
+    try:
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        user = User(id="u1", email="owner@dev.local")
+        db.add(user)
+        for i in range(5):
+            db.add(Video(id=f"v{i}", user_id="u1", original_name="a.mp4",
+                         duration_sec=600))
+            db.add(Job(id=f"j{i}", video_id=f"v{i}", user_id="u1",
+                       status="completed"))
+        db.commit()
+        settings = get_settings()
+        settings.MAX_UPLOADS_PER_DAY = 5
+        settings.MAX_PROCESSING_MINUTES_PER_DAY = 1
+        settings.MAX_AI_REQUESTS_PER_DAY = 1
+        check_fair_use(db, user, settings)  # must not raise
+    finally:
+        get_settings.cache_clear()
+
+
 def test_ingest_rejects_file_ffprobe_cannot_read(monkeypatch, tmp_path):
     # ffprobe binary exists but cannot read THIS file -> hard error,
     # not a warning. Previously ingest passed such files and every
