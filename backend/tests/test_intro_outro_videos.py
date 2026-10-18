@@ -306,3 +306,57 @@ def test_store_side_video_accepts_valid(tmp_path):
                             "intro", _Storage(), 2 * 1024 * 1024 * 1024)
     assert key == "uploads/v1/intro.mp4"
     assert seen["key"] == key
+
+
+def test_burn_in_failure_falls_back_to_soft_with_warning(tmp_path, monkeypatch):
+    """REGRESSION (live 2026-10-18, #13): burn-in failed SILENTLY and the
+    job fell back to soft subtitles — the user then saw NO Myanmar
+    subtitles in players that ignore the embedded mov_text track.
+    Burn failure must log, retry once, and warn visibly on fallback."""
+    from backend.agents.agent07_rendering import RenderingAgent
+
+    main = tmp_path / "main.mp4"
+    _make_clip(main, "0x1a2b4a", 4)
+    agent = RenderingAgent(tmp_path / "results")
+    real_run = RenderingAgent._run
+
+    def failing_burn(self, cmd, timeout=900):
+        if any(isinstance(a, str) and "subtitles=" in a for a in cmd):
+            return subprocess.CompletedProcess(cmd, 1, "", "fake burn failure")
+        return real_run(self, cmd, timeout=timeout)
+
+    monkeypatch.setattr(RenderingAgent, "_run", failing_burn)
+    transcript = [{"start": 0, "end": 2, "text": "မင်္ဂလာပါ ပြောပြပေးပါမယ်"}]
+    res = agent.render(main, [{"start": 0, "end": 4}], transcript,
+                       "Title", "j1", intro_enabled=False, outro_enabled=False)
+    assert res.ok, res.errors
+    assert res.subtitle_mode == "soft"
+    assert any("separate subtitle track" in w for w in res.warnings)
+
+
+def test_burn_in_retry_succeeds_after_one_transient_failure(tmp_path, monkeypatch):
+    """A single transient burn-in failure must be retried, not silently
+    downgraded to soft subtitles."""
+    from backend.agents.agent07_rendering import RenderingAgent
+
+    main = tmp_path / "main.mp4"
+    _make_clip(main, "0x1a2b4a", 4)
+    agent = RenderingAgent(tmp_path / "results")
+    real_run = RenderingAgent._run
+    calls = {"burn": 0}
+
+    def flaky_burn(self, cmd, timeout=900):
+        if any(isinstance(a, str) and "subtitles=" in a for a in cmd):
+            calls["burn"] += 1
+            if calls["burn"] == 1:
+                return subprocess.CompletedProcess(cmd, 1, "", "transient")
+        return real_run(self, cmd, timeout=timeout)
+
+    monkeypatch.setattr(RenderingAgent, "_run", flaky_burn)
+    transcript = [{"start": 0, "end": 2, "text": "မင်္ဂလာပါ ပြောပြပေးပါမယ်"}]
+    res = agent.render(main, [{"start": 0, "end": 4}], transcript,
+                       "Title", "j1", intro_enabled=False, outro_enabled=False)
+    assert res.ok, res.errors
+    assert res.subtitle_mode == "burned_in"
+    assert calls["burn"] == 2
+    assert not any("separate subtitle track" in w for w in res.warnings)

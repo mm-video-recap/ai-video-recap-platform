@@ -427,10 +427,24 @@ class RenderingAgent:
             font = self._find_font()
             if font and srt_path.stat().st_size > 0:
                 vf = self._subtitle_vf(srt_path, font)
-                p = self._run([self.ffmpeg, "-y", "-i", str(joined),
-                               "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                               "-crf", "23", "-c:a", "copy",
-                               "-movflags", "+faststart", str(final)])
+                burn_cmd = [self.ffmpeg, "-y", "-i", str(joined),
+                            "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
+                            "-crf", "23", "-c:a", "copy",
+                            "-movflags", "+faststart", str(final)]
+                p = self._run(burn_cmd)
+                if p.returncode != 0:
+                    # Live 2026-10-18 (#13): burn-in failed SILENTLY and the
+                    # job fell back to soft subtitles — the user then saw
+                    # NO Myanmar subtitles in players that ignore the
+                    # embedded mov_text track. Log the reason, retry once
+                    # (transient worker pressure), and warn visibly if the
+                    # fallback still applies.
+                    log.warning("burn-in failed job=%s rc=%s stderr=%s — retrying once",
+                                job_id, p.returncode, (p.stderr or "")[-500:])
+                    p = self._run(burn_cmd)
+                    if p.returncode != 0:
+                        log.warning("burn-in retry failed job=%s rc=%s stderr=%s — falling back to soft subtitles",
+                                    job_id, p.returncode, (p.stderr or "")[-500:])
                 res.subtitle_mode = "burned_in" if p.returncode == 0 else "sidecar"
             if res.subtitle_mode != "burned_in":
                 # soft subtitles (muxed mov_text) + sidecar file
@@ -443,6 +457,14 @@ class RenderingAgent:
                     res.subtitle_mode = "soft" if p.returncode == 0 else "sidecar"
                     if p.returncode != 0:
                         shutil.copyfile(joined, final)
+                        res.warnings.append(
+                            "subtitles could not be embedded in the video; "
+                            "download the .srt file to see them")
+                    else:
+                        res.warnings.append(
+                            "subtitles could not be burned into the video; "
+                            "they are a separate subtitle track — turn "
+                            "Subtitles on in the player")
                 else:
                     shutil.copyfile(joined, final)
                     res.subtitle_mode = "none"
