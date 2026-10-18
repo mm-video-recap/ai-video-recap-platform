@@ -116,6 +116,40 @@ def test_render_with_blur_burns_region(tmp_path):
     assert abs(float((p.stdout or "0").strip()) - 4.0) < 0.6
 
 
+def test_blur_applied_before_subtitle_burn(tmp_path, caplog):
+    """Layer order (user 2026-10-18): the blur pass must run on `joined`
+    BEFORE subtitles are burned — otherwise the blur would cover the
+    subtitle text where they overlap (the preview canvas paints the
+    subtitle pill above the blur boxes). Proven by the existence of
+    the intermediate joined_blur.mp4, which only the pre-burn pass
+    creates."""
+    import logging
+
+    from backend.agents.agent07_rendering import RenderingAgent
+
+    main = tmp_path / "main.mp4"
+    _make_clip(main, dur=4)
+    agent = RenderingAgent(tmp_path / "results")
+    transcript = [
+        {"start": 0, "end": 4, "text": "မင်္ဂလာပါ စမ်းသပ်နေပါတယ်"},
+    ]
+    with caplog.at_level(logging.INFO):
+        res = agent.render(
+            main, [{"start": 0, "end": 4}], transcript, "Title", "jorder",
+            output_mode="dubbing",
+            # box deliberately covers the subtitle line
+            blur_regions=[{"x": 0.05, "y": 0.55, "w": 0.9, "h": 0.4,
+                           "intensity": 22}],
+            subtitle_y=0.75, subtitle_size=0.06)
+    assert res.ok, res.errors
+    assert res.subtitle_mode == "burned_in"
+    # The pre-burn blur pass ran and produced its intermediate file…
+    assert (tmp_path / "results" / "jorder" / "joined_blur.mp4").exists()
+    assert "applied 1 blur region(s)" in caplog.text
+    # …and the job did not fall back to "no blur" either.
+    assert not any("without blur" in w for w in res.warnings)
+
+
 def test_upload_blur_regions_validated(client, auth_headers, make_mp4_bytes,
                                        monkeypatch):
     """Valid blur JSON accepted; malformed / out-of-range rejected."""

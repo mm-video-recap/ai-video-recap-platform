@@ -627,6 +627,35 @@ class RenderingAgent:
                     log.warning("audio replace skipped job=%s: %s", job_id, exc)
                     res.warnings.append(f"audio replace skipped: {exc}")
 
+            # 2.5) preview-editor blur boxes (user 2026-10-18): applied
+            # to `joined` BEFORE subtitles are burned — the subtitle
+            # text must stay readable on top where a box overlaps it
+            # (the preview canvas also paints the subtitle pill above
+            # the blur boxes). Every downstream path (burned_in / soft
+            # / sidecar) inherits the blur from here.
+            blur_graph, blur_out = self._blur_graph(blur_regions)
+            if blur_graph:
+                blurred = workdir / "joined_blur.mp4"
+                # 2-input overlay filters need -filter_complex.
+                fc = f"{blur_graph};[{blur_out}]format=yuv420p[vout]"
+                blur_cmd = [self.ffmpeg, "-y", "-i", str(joined),
+                            "-filter_complex", fc,
+                            "-map", "[vout]", "-map", "0:a?",
+                            "-c:v", "libx264", "-preset", "veryfast",
+                            "-crf", "23", "-c:a", "copy",
+                            "-movflags", "+faststart", str(blurred)]
+                p = self._run(blur_cmd, timeout=600)
+                if p.returncode == 0 and blurred.exists():
+                    joined = blurred
+                    log.info("applied %d blur region(s) job=%s",
+                             blur_graph.count("boxblur"), job_id)
+                else:
+                    log.warning("blur pass failed job=%s rc=%s stderr=%s — continuing without blur",
+                                job_id, p.returncode, (p.stderr or "")[-500:])
+                    res.warnings.append(
+                        "blur regions could not be applied; "
+                        "video exported without them")
+
             # 3) subtitles — recap: remapped to the recap timeline
             # (intro + placed clips + outro), NOT the original timeline.
             # Dubbing: the transcript stays on the ORIGINAL timeline
@@ -700,29 +729,13 @@ class RenderingAgent:
             # not play in browsers). One uniform re-encode pass
             # guarantees a clean, browser-playable file: constant
             # 30fps, yuv420p, stereo AAC, moov at the front.
-            # Preview-editor blur boxes (user 2026-10-18) are burned
-            # here too, so they land on the final video exactly as
-            # drawn — regardless of the subtitle path above.
+            # (Blur is applied to `joined` BEFORE the subtitle burn,
+            # so subtitles stay on top — not here.)
             normed = workdir / "recap_final_norm.mp4"
-            blur_graph, blur_out = self._blur_graph(blur_regions)
-            if blur_graph:
-                log.info("applying %d blur region(s) job=%s",
-                         blur_graph.count("boxblur"), job_id)
-            cmd = [self.ffmpeg, "-y", "-i", str(final)]
-            if blur_graph:
-                # The blur graph has 2-input overlay filters, which a
-                # simple -vf chain cannot express — use -filter_complex
-                # with explicit maps. No-blur jobs keep the original
-                # -vf path untouched.
-                fc = (f"{blur_graph};"
-                      f"[{blur_out}]fps=30,format=yuv420p[vout]")
-                cmd += ["-filter_complex", fc, "-map", "[vout]"]
-            else:
-                cmd += ["-vf", "fps=30,format=yuv420p"]
-            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+            cmd = [self.ffmpeg, "-y", "-i", str(final),
+                   "-vf", "fps=30,format=yuv420p",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
             if self._has_audio(final):
-                if blur_graph:
-                    cmd += ["-map", "0:a?"]
                 cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
             else:
                 cmd += ["-an"]
