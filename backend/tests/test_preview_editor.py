@@ -63,21 +63,23 @@ def test_subtitle_vf_position_and_size():
     agent = RenderingAgent(tempfile.mkdtemp())
     agent._font_family = lambda p: "Padauk"
 
-    # defaults ≈ the old hardcoded look (Fontsize 24, near bottom)
+    # Fontsize/MarginV are ASS script units (PlayResY=288), NOT video
+    # pixels: fractions are multiplied by 288 so the burn matches the
+    # preview pill 1:1 (measured 2026-10-18).
     vf = agent._subtitle_vf(Path("/tmp/x.srt"), Path("/tmp/f.ttf"))
-    assert "Fontsize=24" in vf and "Alignment=2" in vf
-    # bottom position: MarginV = (1-y)*H
+    assert "Fontsize=10" in vf and "Alignment=2" in vf  # 0.033*288
+    # bottom position: MarginV = (1-y)*288
     vf = agent._subtitle_vf(Path("/tmp/x.srt"), Path("/tmp/f.ttf"),
-                            sub_y_frac=0.9, video_h=1000)
-    assert "Alignment=2" in vf and "MarginV=100" in vf
+                            sub_y_frac=0.9)
+    assert "Alignment=2" in vf and "MarginV=29" in vf  # 0.1*288
     # top half: Alignment 8, MarginV from the top
     vf = agent._subtitle_vf(Path("/tmp/x.srt"), Path("/tmp/f.ttf"),
-                            sub_y_frac=0.2, video_h=1000)
-    assert "Alignment=8" in vf and "MarginV=200" in vf
+                            sub_y_frac=0.2)
+    assert "Alignment=8" in vf and "MarginV=58" in vf  # 0.2*288
     # bigger text
     vf = agent._subtitle_vf(Path("/tmp/x.srt"), Path("/tmp/f.ttf"),
-                            font_size_frac=0.06, video_h=1000)
-    assert "Fontsize=60" in vf
+                            font_size_frac=0.06)
+    assert "Fontsize=17" in vf  # 0.06*288
 
 
 def _make_clip(path, dur=4):

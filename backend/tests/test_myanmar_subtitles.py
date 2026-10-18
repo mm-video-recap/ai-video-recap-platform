@@ -42,7 +42,8 @@ def test_subtitle_vf_pins_myanmar_font(tmp_path):
     vf = agent._subtitle_vf(Path("/tmp/s.srt"), Path("/fonts/Padauk-Regular.ttf"))
     assert "fontsdir=/fonts" in vf
     assert "Fontname=Padauk" in vf
-    assert "Fontsize=24" in vf
+    # default 0.033 height-fraction × ASS script units (PlayResY=288)
+    assert "Fontsize=10" in vf
     assert "PrimaryColour=" in vf
 
 

@@ -98,8 +98,7 @@ class RenderingAgent:
 
     def _subtitle_vf(self, srt_path: Path, font: Path,
                        font_size_frac: float = 0.033,
-                       sub_y_frac: float = 0.96,
-                       video_h: int = 720) -> str:
+                       sub_y_frac: float = 0.96) -> str:
         """libass burn-in filter. force_style pins the Fontname to the
         font we found: without it libass falls back to its default
         style font (usually a Latin-only font), and Myanmar cues come
@@ -113,17 +112,26 @@ class RenderingAgent:
         1 = bottom. Top half uses Alignment 8 (top-center), bottom
         half Alignment 2 (bottom-center), with MarginV as the offset
         from the nearer edge.
+
+        CRITICAL: Fontsize/MarginV are in ASS *script* units, NOT video
+        pixels. ffmpeg's subtitles filter generates the script at the
+        default PlayResY=288 (measured 2026-10-18: MarginV=28 renders
+        a 9.9% gap, Fontsize=12 a 3.6% line — resolution-independent).
+        Sending video-pixel values here made subtitles ~4x too big
+        (live: Fontsize=42 covered the frame). Multiply fractions by
+        288 so the burn matches the preview pill 1:1.
         """
+        _SCRIPT_RES = 288
         family = self._font_family(font)
         vf = f"subtitles={srt_path}:fontsdir={font.parent}"
         if family:
-            h = max(240, int(video_h or 720))
-            fsize = max(8, round(max(0.01, min(0.12, font_size_frac)) * h))
+            fsize = max(6, round(max(0.01, min(0.12, font_size_frac))
+                                 * _SCRIPT_RES))
             y = max(0.0, min(1.0, sub_y_frac))
             if y < 0.5:
-                alignment, margin_v = 8, round(y * h)
+                alignment, margin_v = 8, round(y * _SCRIPT_RES)
             else:
-                alignment, margin_v = 2, round((1.0 - y) * h)
+                alignment, margin_v = 2, round((1.0 - y) * _SCRIPT_RES)
             vf += (
                 ":force_style='Fontname=" + family +
                 f",Fontsize={fsize},Alignment={alignment},"
@@ -244,22 +252,6 @@ class RenderingAgent:
             return float((proc.stdout or "").strip())
         except Exception:
             return None
-
-    def _dimensions(self, path: Path) -> tuple[int, int]:
-        """(width, height) via ffprobe; (0, 0) when unavailable."""
-        ffprobe = shutil.which("ffprobe")
-        if not ffprobe:
-            return (0, 0)
-        try:
-            proc = subprocess.run(
-                [ffprobe, "-v", "error", "-select_streams", "v:0",
-                 "-show_entries", "stream=width,height",
-                 "-of", "csv=p=0", str(path)],
-                capture_output=True, text=True, timeout=30, check=False)
-            w, h = (proc.stdout or "").strip().split(",")[:2]
-            return (int(w), int(h))
-        except Exception:
-            return (0, 0)
 
     def _blur_graph(self, regions: list[dict] | None) -> tuple[str, str]:
         """FFmpeg filtergraph that blurs each preview-editor region.
@@ -670,11 +662,9 @@ class RenderingAgent:
             final = workdir / "recap_final.mp4"
             font = self._find_font()
             if font and srt_path.stat().st_size > 0:
-                _w, _h = self._dimensions(joined)
                 vf = self._subtitle_vf(srt_path, font,
                                        font_size_frac=subtitle_size,
-                                       sub_y_frac=subtitle_y,
-                                       video_h=_h or 720)
+                                       sub_y_frac=subtitle_y)
                 burn_cmd = [self.ffmpeg, "-y", "-i", str(joined),
                             "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
                             "-crf", "23", "-c:a", "copy",
