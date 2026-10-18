@@ -102,6 +102,21 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  output_lang: str = Query(default="en", pattern="^(en|my)$"),
                  subtitle_language: str = Query(default="my",
                                                pattern="^(my|en|none)$"),
+                 # Output mode: "recap" (default) builds a condensed
+                 # recap from highlight clips; "dubbing" keeps the FULL
+                 # original video and replaces its audio with TTS
+                 # narration + translated subtitles on the original
+                 # timeline. Dubbing ignores intro/outro.
+                 output_mode: str = Query(default="recap",
+                                          pattern="^(recap|dubbing)$"),
+                 # Recap style (recap mode only; dubbing ignores it):
+                 # short = key points fast, detailed = thorough story,
+                 # cinematic = dramatic narration pacing,
+                 # custom = user-defined length + tone.
+                 recap_style: str = Query(default="detailed",
+                                          pattern="^(short|detailed|cinematic|custom)$"),
+                 recap_length_sec: int = Query(default=120, ge=15, le=900),
+                 recap_tone: str = Query(default="", max_length=200),
                  intro_enabled: bool = Query(default=True),
                  outro_enabled: bool = Query(default=True),
                  # Optional uploaded intro/outro VIDEOS (replacing the
@@ -238,6 +253,10 @@ def upload_video(request: Request, file: UploadFile = File(...),
             db, result, user_id=user.id, storage_path=stored_path,
             output_lang=output_lang,
             subtitle_language=subtitle_language,
+            output_mode=output_mode,
+            recap_style=recap_style,
+            recap_length_sec=recap_length_sec,
+            recap_tone=recap_tone,
             intro_enabled=intro_enabled,
             outro_enabled=outro_enabled,
             voice_mode=voice_mode,

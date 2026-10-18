@@ -83,6 +83,8 @@ class ResultsResponse(BaseModel):
     subtitle_url: str | None
     warnings: list[str] = []
     quota_exhausted: bool = False
+    output_mode: str = "recap"
+    recap_style: str = "detailed"
 
 
 # ------------------------------------------------------------------ feedback / reports

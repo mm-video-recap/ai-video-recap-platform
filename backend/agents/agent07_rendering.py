@@ -270,6 +270,7 @@ class RenderingAgent:
     # -- main -----------------------------------------------------------------
     def render(self, normalized_path: str | Path, highlights: list[dict],
                transcript: list[dict], title: str, job_id: str,
+               output_mode: str = "recap",
                intro_text: str | None = None,
                outro_text: str | None = None,
                intro_enabled: bool = True,
@@ -291,7 +292,9 @@ class RenderingAgent:
             if not src.exists():
                 res.errors.append(f"normalized video not found: {normalized_path}")
                 return res
-            if not highlights:
+            # Dubbing needs no highlights (the output IS the full video);
+            # recap still needs at least one clip to cut.
+            if not highlights and output_mode != "dubbing":
                 res.errors.append("no highlights to render")
                 return res
 
@@ -302,78 +305,88 @@ class RenderingAgent:
             # whether the source has audio, and build every part to match.
             has_audio = self._has_audio(src)
 
-            # 1) cut clips. Audio is forced to stereo 44100 Hz AAC (see
-            # _normalize_video_clip): a mono source would otherwise
-            # break the -c copy concat the same way a mono intro did.
-            clips: list[Path] = []
-            for i, hl in enumerate(highlights):
-                clip = workdir / f"clip_{i:02d}.mp4"
-                cmd = [self.ffmpeg, "-y",
-                       "-ss", str(hl["start"]), "-to", str(hl["end"]),
-                       "-i", str(src),
-                       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
-                if has_audio:
-                    cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
-                cmd += [str(clip)]
-                p = self._run(cmd, timeout=600)
-                if p.returncode == 0 and clip.exists():
-                    clips.append(clip)
-                else:
-                    res.warnings.append(f"clip {i} cut failed, skipped")
-            if not clips:
-                res.errors.append("all highlight clips failed to cut")
-                return res
-
-            # 2) concat (+ optional intro/outro). An uploaded intro/outro
-            # VIDEO wins over the text title card; when the video is
-            # missing or fails to normalize, fall back to the text card
-            # (never fail the job over a decorative part). The intro
-            # part's real duration drives the subtitle remap offset.
-            parts: list[Path] = []
-            intro_duration = 0.0
-            intro = None
-            if intro_enabled:
-                if intro_clip:
-                    if Path(intro_clip).exists():
-                        intro, intro_duration = self._normalize_video_clip(
-                            workdir, intro_clip, "intro", has_audio=has_audio)
-                        if intro is None:
-                            res.warnings.append(
-                                "intro video could not be used; used text card instead")
+            # DUBBING: the joined video IS the full normalized source —
+            # no clip cutting, no concat, no intro/outro. Subtitles stay
+            # on the ORIGINAL timeline (no remap) and narration is the
+            # full translated transcript (set by the caller).
+            if output_mode == "dubbing":
+                joined = src
+                intro_duration = 0.0
+                clips: list[Path] = []
+            else:
+                joined = None  # built by the clip/concat path below
+                intro_duration = 0.0
+                clips = []
+                # 1) cut clips. Audio is forced to stereo 44100 Hz AAC (see
+                # _normalize_video_clip): a mono source would otherwise
+                # break the -c copy concat the same way a mono intro did.
+                for i, hl in enumerate(highlights):
+                    clip = workdir / f"clip_{i:02d}.mp4"
+                    cmd = [self.ffmpeg, "-y",
+                           "-ss", str(hl["start"]), "-to", str(hl["end"]),
+                           "-i", str(src),
+                           "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+                    if has_audio:
+                        cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
+                    cmd += [str(clip)]
+                    p = self._run(cmd, timeout=600)
+                    if p.returncode == 0 and clip.exists():
+                        clips.append(clip)
                     else:
-                        res.warnings.append(
-                            "intro video file not found; used text card instead")
-                if intro is None and (intro_text or title):
-                    intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio)
-                    intro_duration = 2.0 if intro else 0.0
-            outro = None
-            if outro_enabled:
-                if outro_clip:
-                    if Path(outro_clip).exists():
-                        outro, _ = self._normalize_video_clip(
-                            workdir, outro_clip, "outro", has_audio=has_audio)
-                        if outro is None:
-                            res.warnings.append(
-                                "outro video could not be used; used text card instead")
-                    else:
-                        res.warnings.append(
-                            "outro video file not found; used text card instead")
-                if outro is None and outro_text:
-                    outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio)
-            if intro:
-                parts.append(intro)
-            parts.extend(clips)
-            if outro:
-                parts.append(outro)
+                        res.warnings.append(f"clip {i} cut failed, skipped")
+                if not clips:
+                    res.errors.append("all highlight clips failed to cut")
+                    return res
 
-            concat_list = workdir / "concat.txt"
-            concat_list.write_text("".join(f"file '{p}'\n" for p in parts))
-            joined = workdir / "joined.mp4"
-            p = self._run([self.ffmpeg, "-y", "-f", "concat", "-safe", "0",
-                           "-i", str(concat_list), "-c", "copy", str(joined)])
-            if p.returncode != 0 or not joined.exists():
-                res.errors.append(f"concat failed: {p.stderr[-300:]}")
-                return res
+                # 2) concat (+ optional intro/outro). An uploaded intro/outro
+                # VIDEO wins over the text title card; when the video is
+                # missing or fails to normalize, fall back to the text card
+                # (never fail the job over a decorative part). The intro
+                # part's real duration drives the subtitle remap offset.
+                parts: list[Path] = []
+                intro = None
+                if intro_enabled:
+                    if intro_clip:
+                        if Path(intro_clip).exists():
+                            intro, intro_duration = self._normalize_video_clip(
+                                workdir, intro_clip, "intro", has_audio=has_audio)
+                            if intro is None:
+                                res.warnings.append(
+                                    "intro video could not be used; used text card instead")
+                        else:
+                            res.warnings.append(
+                                "intro video file not found; used text card instead")
+                    if intro is None and (intro_text or title):
+                        intro = self._title_card(workdir, intro_text or title, "intro", has_audio=has_audio)
+                        intro_duration = 2.0 if intro else 0.0
+                outro = None
+                if outro_enabled:
+                    if outro_clip:
+                        if Path(outro_clip).exists():
+                            outro, _ = self._normalize_video_clip(
+                                workdir, outro_clip, "outro", has_audio=has_audio)
+                            if outro is None:
+                                res.warnings.append(
+                                    "outro video could not be used; used text card instead")
+                        else:
+                            res.warnings.append(
+                                "outro video file not found; used text card instead")
+                    if outro is None and outro_text:
+                        outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio)
+                if intro:
+                    parts.append(intro)
+                parts.extend(clips)
+                if outro:
+                    parts.append(outro)
+
+                concat_list = workdir / "concat.txt"
+                concat_list.write_text("".join(f"file '{p}'\n" for p in parts))
+                joined = workdir / "joined.mp4"
+                p = self._run([self.ffmpeg, "-y", "-f", "concat", "-safe", "0",
+                               "-i", str(concat_list), "-c", "copy", str(joined)])
+                if p.returncode != 0 or not joined.exists():
+                    res.errors.append(f"concat failed: {p.stderr[-300:]}")
+                    return res
 
             # 2b) TTS narration (optional): replace the audio track with a
             # synthesized reading of the recap summary, fitted to the
@@ -417,11 +430,15 @@ class RenderingAgent:
                     log.warning("tts narration skipped job=%s: %s", job_id, exc)
                     res.warnings.append(f"narration skipped: {exc}")
 
-            # 3) subtitles — remapped to the recap timeline (intro + clips
-            # + outro), NOT the original timeline.
+            # 3) subtitles — recap: remapped to the recap timeline
+            # (intro + clips + outro), NOT the original timeline.
+            # Dubbing: the transcript stays on the ORIGINAL timeline
+            # (the output IS the original video), so no remap.
             srt_path = workdir / "subtitles.srt"
-            self._write_srt(srt_path, self._remap_transcript(
-                transcript or [], highlights, intro_duration))
+            subs = (transcript or []) if output_mode == "dubbing" \
+                else self._remap_transcript(
+                    transcript or [], highlights, intro_duration)
+            self._write_srt(srt_path, subs)
             res.subtitle_path = str(srt_path)
             final = workdir / "recap_final.mp4"
             font = self._find_font()

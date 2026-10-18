@@ -163,6 +163,16 @@ function ResultContent() {
       >
         ✨ {result.title}
       </motion.h1>
+      {result.output_mode === "dubbing" && (
+        <p className="mb-4 inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-600 dark:text-violet-300">
+          🎙️ {t("result.dubbingBadge")}
+        </p>
+      )}
+      {result.output_mode !== "dubbing" && result.recap_style && (
+        <p className="mb-4 inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600 dark:text-blue-300">
+          ✨ {t(`result.style_${result.recap_style}`)}
+        </p>
+      )}
 
       {/* Player — remount on seekTo change to jump via initial position */}
       <div key={playerKey}>

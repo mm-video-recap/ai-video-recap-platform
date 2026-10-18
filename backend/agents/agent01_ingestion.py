@@ -237,6 +237,10 @@ class IngestionAgent:
 def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       storage_path: str, output_lang: str = "en",
                       subtitle_language: str = "my",
+                      output_mode: str = "recap",
+                      recap_style: str = "detailed",
+                      recap_length_sec: int = 120,
+                      recap_tone: str = "",
                       intro_enabled: bool = True,
                       outro_enabled: bool = True,
                       voice_mode: str = "original",
@@ -281,6 +285,12 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
     # Celery task kwargs (in-memory only); the browser is the only
     # place they are saved.
     video.meta = {**(video.meta or {}),
+                  "output_mode": output_mode if output_mode in ("recap", "dubbing") else "recap",
+                  # Recap style lives in video.meta (JSON) — NOT the
+                  # legacy recap_style DB column, which stays unused.
+                  "recap_style": recap_style if recap_style in ("short", "detailed", "cinematic", "custom") else "detailed",
+                  "recap_length_sec": max(15, min(900, int(recap_length_sec or 120))),
+                  "recap_tone": (recap_tone or "")[:200],
                   "intro_enabled": bool(intro_enabled),
                   "outro_enabled": bool(outro_enabled),
                   "voice_mode": voice_mode,

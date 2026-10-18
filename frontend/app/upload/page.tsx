@@ -52,6 +52,10 @@ function UploadContent() {
   const prefs = useMemo(() => loadPreferences(), []);
   const [summaryLang, setSummaryLang] = useState<"my" | "en">(prefs.defaultLanguage as "my" | "en");
   const [subtitleLang, setSubtitleLang] = useState<Lang>(prefs.defaultLanguage as "my" | "en");
+  const [outputMode, setOutputMode] = useState<"recap" | "dubbing">("recap");
+  const [recapStyle, setRecapStyle] = useState<"short" | "detailed" | "cinematic" | "custom">("detailed");
+  const [recapLengthSec, setRecapLengthSec] = useState(120);
+  const [recapTone, setRecapTone] = useState("");
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
   const [introFile, setIntroFile] = useState<File | null>(null);
@@ -136,6 +140,20 @@ function UploadContent() {
           // (see lib/api.ts) and persisted on the backend Job.
           output_lang: summaryLang,
           subtitle_language: subtitleLang,
+          output_mode: outputMode,
+          // Recap style (recap mode only): short / detailed /
+          // cinematic / custom (length + tone).
+          ...(outputMode === "recap"
+            ? {
+                recap_style: recapStyle,
+                ...(recapStyle === "custom"
+                  ? {
+                      recap_length_sec: String(Math.max(15, Math.min(900, recapLengthSec || 120))),
+                      ...(recapTone.trim() ? { recap_tone: recapTone.trim().slice(0, 200) } : {}),
+                    }
+                  : {}),
+              }
+            : {}),
           intro_enabled: String(introEnabled),
           outro_enabled: String(outroEnabled),
           // Uploaded intro/outro videos (form fields): the final recap
@@ -243,6 +261,61 @@ function UploadContent() {
               <h2 className="mb-4 text-lg font-bold">{t("upload.settingsTitle")}</h2>
               <div className="space-y-5">
                 <div>
+                  <span className="label-text">{t("upload.outputMode")}</span>
+                  {segmented(outputMode, (v) => setOutputMode(v as "recap" | "dubbing"), [
+                    { value: "recap", label: t("upload.modeRecap") },
+                    { value: "dubbing", label: t("upload.modeDubbing") },
+                  ])}
+                  {outputMode === "dubbing" && (
+                    <p className="mt-2 text-xs text-[var(--muted)]">{t("upload.modeDubbingNote")}</p>
+                  )}
+                </div>
+                {outputMode === "recap" && (
+                <div>
+                  <span className="label-text">{t("upload.recapStyle")}</span>
+                  {segmented(recapStyle, (v) => setRecapStyle(v as "short" | "detailed" | "cinematic" | "custom"), [
+                    { value: "short", label: t("upload.styleShort") },
+                    { value: "detailed", label: t("upload.styleDetailed") },
+                    { value: "cinematic", label: t("upload.styleCinematic") },
+                    { value: "custom", label: t("upload.styleCustom") },
+                  ])}
+                  <p className="mt-2 text-xs text-[var(--muted)]">{t(`upload.styleDesc_${recapStyle}`)}</p>
+                  {recapStyle === "custom" && (
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <span className="label-text">{t("upload.customLength")}</span>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min={15}
+                            max={600}
+                            step={15}
+                            value={recapLengthSec}
+                            onChange={(e) => setRecapLengthSec(Number(e.target.value))}
+                            className="w-full"
+                            aria-label={t("upload.customLength")}
+                          />
+                          <span className="w-20 shrink-0 text-right text-sm font-semibold">
+                            {Math.floor(recapLengthSec / 60)}:{String(recapLengthSec % 60).padStart(2, "0")}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="label-text">{t("upload.customTone")}</span>
+                        <input
+                          type="text"
+                          value={recapTone}
+                          onChange={(e) => setRecapTone(e.target.value)}
+                          maxLength={200}
+                          placeholder={t("upload.customTonePlaceholder")}
+                          className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                )}
+                <div>
                   <span className="label-text">{t("upload.summaryLang")}</span>
                   {segmented(summaryLang, (v) => setSummaryLang(v as "my" | "en"), [
                     { value: "my", label: `🇲🇲 ${t("upload.langMy")}` },
@@ -257,6 +330,7 @@ function UploadContent() {
                     { value: "none", label: t("upload.langNone") },
                   ])}
                 </div>
+                {outputMode === "recap" && (
                 <div>
                   <span className="label-text">{t("upload.introOutro")}</span>
                   <div className="space-y-3">
@@ -310,6 +384,7 @@ function UploadContent() {
                     )}
                   </div>
                 </div>
+                )}
                 <div>
                   <span className="label-text">{t("upload.voiceTitle")}</span>
                   {segmented(voice.voiceMode, (v) => updateVoice({ voiceMode: v as "original" | "tts" }), [

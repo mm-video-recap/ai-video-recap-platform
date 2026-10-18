@@ -230,6 +230,31 @@ def process_video(self, job_id: str,
         db.close()
 
 
+def _recap_style_config(prefs: dict) -> dict:
+    """Map the user's recap style (video.meta) to pipeline params.
+
+    Returns {"name", "top_n", "max_total_sec", "target_sec", "tone"}.
+    Dubbing ignores the style; the render step never sees it.
+    """
+    name = prefs.get("recap_style", "detailed")
+    if name not in ("short", "detailed", "cinematic", "custom"):
+        name = "detailed"
+    if name == "short":
+        return {"name": name, "top_n": 4, "max_total_sec": 60,
+                "target_sec": 60, "tone": ""}
+    if name == "cinematic":
+        return {"name": name, "top_n": 8, "max_total_sec": 180,
+                "target_sec": 180, "tone": ""}
+    if name == "custom":
+        target = max(15, min(900, int(prefs.get("recap_length_sec") or 120)))
+        return {"name": name,
+                "top_n": max(2, min(16, target // 15)),
+                "max_total_sec": target, "target_sec": target,
+                "tone": (prefs.get("recap_tone") or "")[:200]}
+    return {"name": name, "top_n": 10, "max_total_sec": 300,
+            "target_sec": 300, "tone": ""}
+
+
 @celery_app.task(bind=True, name="backend.celery_app.tasks.ai_analyze",
                  max_retries=2, time_limit=2400, soft_time_limit=2250)
 def ai_analyze(self, job_id: str,
@@ -245,7 +270,7 @@ def ai_analyze(self, job_id: str,
     (env) keys, as before.
     """
     from backend.config import get_settings  # noqa: PLC0415
-    from backend.database import Job  # noqa: PLC0415
+    from backend.database import Job, Video  # noqa: PLC0415
 
     db = _db()
     try:
@@ -257,6 +282,11 @@ def ai_analyze(self, job_id: str,
         prev = job.result or {}
         proc = prev.get("processing", {})
         lang = job.output_lang or "en"
+        video = db.query(Video).filter_by(id=job.video_id).one_or_none()
+        prefs = (video.meta or {}) if video is not None else {}
+        style = _recap_style_config(prefs)
+        log.info("ai_analyze job=%s recap_style=%s top_n=%d max_total_sec=%s",
+                 job_id, style["name"], style["top_n"], style["max_total_sec"])
 
         # Per-user AI keys arrive as task kwargs (see docstring):
         # no key material is read from video.meta anymore.
@@ -292,13 +322,14 @@ def ai_analyze(self, job_id: str,
         from backend.agents.agent05_summary import SummaryAgent  # noqa: PLC0415
         summary_out = SummaryAgent(manager).summarize(
             transcript, vision_out, job_id,
-            duration_sec=proc.get("duration_sec"), lang=lang)
+            duration_sec=proc.get("duration_sec"), lang=lang, style=style)
 
         # -- agent06 highlights --
         set_job_progress(db, job_id, stage="highlights", progress=78.0,
                          message="Picking highlights…")
         from backend.agents.agent06_highlights import HighlightsAgent  # noqa: PLC0415
-        highlights_out = HighlightsAgent().select(
+        highlights_out = HighlightsAgent(
+            top_n=style["top_n"], max_total_sec=style["max_total_sec"]).select(
             transcript, proc.get("segments", []), vision_out, job_id,
             duration_sec=proc.get("duration_sec"))
 
@@ -582,17 +613,25 @@ def render_recap(self, job_id: str,
                 user_keys=user_keys)
             subtitles_failed = not subtitles_ok
 
-        set_job_progress(db, job_id, stage="rendering", progress=85.0,
-                         message="Rendering recap video…", status="rendering")
-
         from backend.agents.agent07_rendering import RenderingAgent  # noqa: PLC0415
         renderer = RenderingAgent(Path(settings.STORAGE_ROOT) / "results")
         # Intro/outro toggles live in video.meta (see persist_ingestion);
         # missing keys mean "enabled" (backward compat for older jobs).
         video = db.query(Video).filter_by(id=job.video_id).one_or_none()
         prefs = (video.meta or {}) if video is not None else {}
-        intro_enabled = prefs.get("intro_enabled", True)
-        outro_enabled = prefs.get("outro_enabled", True)
+        # Output mode: "recap" (default) builds a condensed recap from
+        # highlight clips; "dubbing" keeps the FULL original video and
+        # replaces its audio with TTS narration of the full translated
+        # transcript. Dubbing ignores intro/outro (the output IS the
+        # original video, dubbed).
+        output_mode = prefs.get("output_mode", "recap")
+        if output_mode not in ("recap", "dubbing"):
+            output_mode = "recap"
+        set_job_progress(db, job_id, stage="rendering", progress=85.0,
+                         message=("Rendering dubbed video…" if output_mode == "dubbing"
+                                  else "Rendering recap video…"), status="rendering")
+        intro_enabled = prefs.get("intro_enabled", True) and output_mode != "dubbing"
+        outro_enabled = prefs.get("outro_enabled", True) and output_mode != "dubbing"
         intro_text, outro_text = _intro_outro_texts(prefs, summary)
         # Uploaded intro/outro VIDEOS (storage keys in video.meta) win
         # over the text cards. Materialize them locally for FFmpeg; a
@@ -610,21 +649,42 @@ def render_recap(self, job_id: str,
         narration_failed = False
         tts_kwargs: dict = {}
         if voice_mode == "tts":
-            # Narration = the recap summary in the recap language.
-            # Falls back to key points / transcript when the summary
-            # step failed, so TTS still runs (see _narration_text).
-            # The fallback is usually ENGLISH (the transcript language)
-            # while the user asked for Myanmar speech — Thiha reading
-            # English text is NOT a Myanmar voiceover. Translate the
-            # narration to the job's output language first; if that
-            # fails, warn visibly instead of silently speaking English.
-            narration_text = _narration_text(summary, transcript)
-            output_lang = job.output_lang or "my"
-            if narration_text.strip() and output_lang in ("my", "en"):
-                narration_text, narration_ok = _translate_text(
-                    settings, narration_text, output_lang, speech_lang,
-                    user_keys=user_keys)
+            # DUBBING: narration = the FULL translated transcript (the
+            # dialogue itself, dubbed), not the recap summary. Falls
+            # back to the summary narration when there is no transcript
+            # (e.g. no speech detected), so TTS still runs.
+            if output_mode == "dubbing" and transcript:
+                narration_text = " ".join(
+                    (seg.get("text") or "").strip()
+                    for seg in transcript).strip()
+                output_lang = job.output_lang or "my"
+                narration_ok = True
+                # The transcript is ALREADY translated above, so the
+                # text is in the target language; _translate_text
+                # would skip it. Only re-translate when it does not
+                # look like the target language (kept original text).
+                if narration_text and output_lang in ("my", "en"):
+                    narration_text, narration_ok = _translate_text(
+                        settings, narration_text, output_lang, speech_lang,
+                        user_keys=user_keys)
                 narration_failed = not narration_ok
+            else:
+                # RECAP: narration = the recap summary in the recap
+                # language. Falls back to key points / transcript when
+                # the summary step failed, so TTS still runs (see
+                # _narration_text). The fallback is usually ENGLISH
+                # (the transcript language) while the user asked for
+                # Myanmar speech — Thiha reading English text is NOT a
+                # Myanmar voiceover. Translate the narration to the
+                # job's output language first; if that fails, warn
+                # visibly instead of silently speaking English.
+                narration_text = _narration_text(summary, transcript)
+                output_lang = job.output_lang or "my"
+                if narration_text.strip() and output_lang in ("my", "en"):
+                    narration_text, narration_ok = _translate_text(
+                        settings, narration_text, output_lang, speech_lang,
+                        user_keys=user_keys)
+                    narration_failed = not narration_ok
             tts_kwargs = {
                 "tts_provider": prefs.get("tts_provider", "edge"),
                 "tts_voice": prefs.get("tts_voice", "thiha"),
@@ -638,6 +698,7 @@ def render_recap(self, job_id: str,
         result = renderer.render(
             proc.get("normalized_path"), highlights, transcript,
             summary.get("title", "Video Recap"), job_id,
+            output_mode=output_mode,
             intro_text=intro_text,
             outro_text=outro_text,
             intro_enabled=bool(intro_enabled),

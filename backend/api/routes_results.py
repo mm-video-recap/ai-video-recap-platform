@@ -61,6 +61,24 @@ def _output_by_kind(db: Session, job_id: str, kind: str) -> Output | None:
             .order_by(Output.created_at.desc()).first())
 
 
+def _video_output_mode(db: Session, video_id: str) -> str:
+    """Output mode stored in video.meta ("recap" | "dubbing")."""
+    from backend.database import Video  # noqa: PLC0415 - avoid import cycle
+
+    video = db.query(Video).filter_by(id=video_id).one_or_none()
+    mode = (video.meta or {}).get("output_mode", "recap") if video is not None else "recap"
+    return mode if mode in ("recap", "dubbing") else "recap"
+
+
+def _video_recap_style(db: Session, video_id: str) -> str:
+    """Recap style stored in video.meta (recap mode only)."""
+    from backend.database import Video  # noqa: PLC0415 - avoid import cycle
+
+    video = db.query(Video).filter_by(id=video_id).one_or_none()
+    style = (video.meta or {}).get("recap_style", "detailed") if video is not None else "detailed"
+    return style if style in ("short", "detailed", "cinematic", "custom") else "detailed"
+
+
 @router.get("/{job_id}", response_model=ResultsResponse)
 def get_results(job_id: str, request: Request,
                 user: User = Depends(get_current_user),
@@ -96,6 +114,8 @@ def get_results(job_id: str, request: Request,
         subtitle_url=_resolve_url(sub_out, job_id, "subtitles", base_url) if sub_out else None,
         warnings=[str(w) for w in (data.get("render", {}) or {}).get("warnings", [])],
         quota_exhausted=bool(data.get("quota_exhausted", False)),
+        output_mode=_video_output_mode(db, job.video_id),
+        recap_style=_video_recap_style(db, job.video_id),
     )
 
 

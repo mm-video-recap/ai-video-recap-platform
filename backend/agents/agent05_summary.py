@@ -31,9 +31,33 @@ class SummaryAgent:
     def __init__(self, provider_manager):
         self.provider_manager = provider_manager
 
-    def _prompt(self, transcript_text: str, vision_notes: str, lang: str) -> str:
+    def _prompt(self, transcript_text: str, vision_notes: str, lang: str,
+                style: dict | None = None) -> str:
         lang_name = "Burmese (Myanmar language)" if lang == "my" else "English"
+        style = style or {}
+        style_name = style.get("name", "detailed")
+        tone = style.get("tone", "")
+        style_block = {
+            "short": ("STYLE: SHORT recap. Be punchy and fast-paced: key "
+                      "events only, no fluff. summary_short: 2-3 sentences. "
+                      "summary_long: 1 short paragraph."),
+            "detailed": ("STYLE: DETAILED recap. Be thorough: explain the "
+                         "story and events in detail, in order. "
+                         "summary_short: 1 paragraph. summary_long: 4-6 "
+                         "paragraphs."),
+            "cinematic": ("STYLE: CINEMATIC recap. Write like a movie "
+                          "trailer narrator: dramatic pacing, vivid and "
+                          "gripping language, a hook in the first line. "
+                          "summary_short: 2-3 sentences with punch. "
+                          "summary_long: 3-4 dramatic paragraphs."),
+            "custom": ("STYLE: CUSTOM recap. "
+                       f"Target length: about {style.get('target_sec', 120)} "
+                       "seconds of narration. "
+                       + (f"User-requested tone: {tone}. " if tone else "")),
+        }.get(style_name, "")
         return f"""You are an expert video recap writer. Write the recap in {lang_name}.
+
+{style_block}
 
 TRANSCRIPT (with timestamps in seconds):
 {transcript_text[:12000]}
@@ -50,7 +74,8 @@ Rules:
 - Reply with ONLY the JSON object, no markdown fences."""
 
     def summarize(self, transcript: list[dict], vision: dict, job_id: str,
-                  duration_sec: float | None = None, lang: str = "en") -> dict:
+                  duration_sec: float | None = None, lang: str = "en",
+                  style: dict | None = None) -> dict:
         lang = "my" if lang == "my" else "en"
         try:
             lines = [f"[{s.get('start', 0):.0f}-{s.get('end', 0):.0f}s] {s.get('text', '')}"
@@ -61,7 +86,8 @@ Rules:
                 for f in (vision or {}).get("frames", [])) or "(no visual analysis)"
 
             text, provider = asyncio.run(self.provider_manager.complete(
-                "summary", self._prompt(transcript_text, vision_notes, lang),
+                "summary", self._prompt(transcript_text, vision_notes, lang,
+                                        style=style),
                 json_mode=True, max_tokens=3000))
             data = _extract_json(text)
             out = _validate(data, duration_sec)

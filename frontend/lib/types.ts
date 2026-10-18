@@ -80,6 +80,8 @@ export interface RecapResult {
   subtitle_url?: string | null;
   warnings?: string[];
   quota_exhausted?: boolean;
+  output_mode?: string;
+  recap_style?: string;
 }
 
 export interface UploadResult {
