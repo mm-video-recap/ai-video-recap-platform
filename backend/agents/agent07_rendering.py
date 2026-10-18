@@ -115,8 +115,33 @@ class RenderingAgent:
             )
         return vf
 
+    def _pad_to_duration(self, workdir: Path, src_path: Path,
+                         target_sec: float, has_audio: bool) -> Path:
+        """Freeze the last frame (+ silence) so a short video reaches
+        the narration length. Returns the padded path, or src_path when
+        padding fails (never fail the job over it)."""
+        gap = target_sec - (self._duration(src_path) or 0.0)
+        if gap <= 0.25 or not self.ffmpeg:
+            return src_path
+        out = workdir / "joined_padded.mp4"
+        cmd = [self.ffmpeg, "-y", "-i", str(src_path),
+               "-vf", f"tpad=stop_mode=clone:stop_duration={gap:.2f}",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+        if has_audio:
+            cmd += ["-af", f"apad=whole_dur={target_sec:.2f}",
+                    "-c:a", "aac", "-b:a", "128k"]
+        else:
+            cmd += ["-an"]
+        cmd += ["-shortest", "-movflags", "+faststart", str(out)]
+        p = self._run(cmd, timeout=600)
+        if p.returncode == 0 and out.exists():
+            return out
+        log.warning("pad to %.1fs failed: %s", target_sec, (p.stderr or "")[-300:])
+        return src_path
+
     def _remap_transcript(self, transcript: list[dict], highlights: list[dict],
-                         intro_duration: float = 0.0) -> list[dict]:
+                         intro_duration: float = 0.0,
+                         layout: list[tuple[float, float, float]] | None = None) -> list[dict]:
         """Remap subtitle cues from ORIGINAL-video time to RECAP time.
 
         The SRT is burned onto the JOINED video (intro + concatenated
@@ -127,18 +152,21 @@ class RenderingAgent:
         that clip's position in the recap; cues outside all highlights
         are dropped. intro_duration is the length of the intro part
         (2.0s for a text title card, the real length for an uploaded
-        intro video, 0.0 when intro is off).
+        intro video, 0.0 when intro is off). When `layout` is given
+        (prebuilt recap_start/orig_start/orig_end triples, e.g. with
+        looped clips), it is used directly.
         """
-        layout: list[tuple[float, float, float]] = []  # (recap_start, orig_start, orig_end)
-        t = float(intro_duration or 0.0)
-        for hl in highlights or []:
-            try:
-                s, e = float(hl["start"]), float(hl["end"])
-            except (TypeError, ValueError, KeyError):
-                continue
-            if e > s:
-                layout.append((t, s, e))
-                t += e - s
+        if layout is None:
+            layout = []  # (recap_start, orig_start, orig_end)
+            t = float(intro_duration or 0.0)
+            for hl in highlights or []:
+                try:
+                    s, e = float(hl["start"]), float(hl["end"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if e > s:
+                    layout.append((t, s, e))
+                    t += e - s
         remapped: list[dict] = []
         for seg in transcript or []:
             try:
@@ -309,40 +337,63 @@ class RenderingAgent:
             # no clip cutting, no concat, no intro/outro. Subtitles stay
             # on the ORIGINAL timeline (no remap) and narration is the
             # full translated transcript (set by the caller).
+            #
+            # RECAP: the VIDEO follows the NARRATION (user 2026-10-18:
+            # no minute caps — the recap is as long/short as the AI
+            # script, and the video adjusts to it). So: synthesize the
+            # narration FIRST, then cut/loop clips to cover its
+            # duration, then swap the audio (no narration fitting).
+            narrated = None
+            narration_sec = 0.0
+            if narration_text and narration_text.strip():
+                try:
+                    from backend.agents.agent_tts import (  # noqa: PLC0415
+                        replace_audio, synthesize_narration,
+                        validate_tts_prefs)
+                    validate_tts_prefs(tts_provider, tts_voice, tts_rate, tts_pitch)
+                    narrated = synthesize_narration(
+                        narration_text, tts_provider, tts_voice, tts_rate,
+                        tts_pitch, workdir, settings=settings)
+                    # Edge TTS is network-fragile (its endpoint can be
+                    # unreachable from a datacenter). Fall back to Gemini
+                    # TTS — the Gemini API is already proven reachable —
+                    # rather than silently keeping the original audio.
+                    if narrated is None and tts_provider == "edge":
+                        gemini_voice = "Charon" if tts_voice == "thiha" else "Kore"
+                        narrated = synthesize_narration(
+                            narration_text, "gemini", gemini_voice,
+                            tts_rate, 0, workdir, settings=settings)
+                        if narrated is not None:
+                            res.warnings.append(
+                                "edge TTS unavailable; used Gemini voice "
+                                f"{gemini_voice} instead")
+                    if narrated is not None:
+                        narration_sec = self._duration(narrated) or 0.0
+                        log.info("narration synth ok job=%s sec=%.1f",
+                                 job_id, narration_sec)
+                    else:
+                        res.warnings.append(
+                            "narration synthesis failed; kept original audio")
+                except Exception as exc:
+                    log.warning("tts narration skipped job=%s: %s", job_id, exc)
+                    res.warnings.append(f"narration skipped: {exc}")
+
             if output_mode == "dubbing":
                 joined = src
                 intro_duration = 0.0
+                layout = None
                 clips: list[Path] = []
             else:
                 joined = None  # built by the clip/concat path below
                 intro_duration = 0.0
+                outro_duration = 0.0
                 clips = []
-                # 1) cut clips. Audio is forced to stereo 44100 Hz AAC (see
-                # _normalize_video_clip): a mono source would otherwise
-                # break the -c copy concat the same way a mono intro did.
-                for i, hl in enumerate(highlights):
-                    clip = workdir / f"clip_{i:02d}.mp4"
-                    cmd = [self.ffmpeg, "-y",
-                           "-ss", str(hl["start"]), "-to", str(hl["end"]),
-                           "-i", str(src),
-                           "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
-                    if has_audio:
-                        cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
-                    cmd += [str(clip)]
-                    p = self._run(cmd, timeout=600)
-                    if p.returncode == 0 and clip.exists():
-                        clips.append(clip)
-                    else:
-                        res.warnings.append(f"clip {i} cut failed, skipped")
-                if not clips:
-                    res.errors.append("all highlight clips failed to cut")
-                    return res
-
-                # 2) concat (+ optional intro/outro). An uploaded intro/outro
-                # VIDEO wins over the text title card; when the video is
-                # missing or fails to normalize, fall back to the text card
-                # (never fail the job over a decorative part). The intro
-                # part's real duration drives the subtitle remap offset.
+                # Intro/outro are built FIRST: their real durations come
+                # out of the narration budget (the recap ends when the
+                # narration ends). An uploaded intro/outro VIDEO wins
+                # over the text title card; when the video is missing or
+                # fails to normalize, fall back to the text card (never
+                # fail the job over a decorative part).
                 parts: list[Path] = []
                 intro = None
                 if intro_enabled:
@@ -363,7 +414,7 @@ class RenderingAgent:
                 if outro_enabled:
                     if outro_clip:
                         if Path(outro_clip).exists():
-                            outro, _ = self._normalize_video_clip(
+                            outro, outro_duration = self._normalize_video_clip(
                                 workdir, outro_clip, "outro", has_audio=has_audio)
                             if outro is None:
                                 res.warnings.append(
@@ -373,6 +424,72 @@ class RenderingAgent:
                                 "outro video file not found; used text card instead")
                     if outro is None and outro_text:
                         outro = self._title_card(workdir, outro_text or "Thanks for watching", "outro", has_audio=has_audio)
+                        outro_duration = 2.0 if outro else 0.0
+
+                # Clip selection follows the narration: whole clips in
+                # score order while they fit the budget; the best clip is
+                # always taken (trimmed later if needed); when the pool
+                # runs out, loop the selection until it covers the
+                # narration. Without narration: all highlights, as before.
+                valid = [h for h in (highlights or [])
+                         if float(h.get("end", 0) or 0) > float(h.get("start", 0) or 0)]
+                selected: list[dict] = []
+                if narrated is not None and narration_sec > 0:
+                    budget = max(1.0, narration_sec - intro_duration - outro_duration)
+                    total = 0.0
+                    for h in valid:
+                        d = float(h["end"]) - float(h["start"])
+                        if total + d <= budget or not selected:
+                            selected.append(h)
+                            total += d
+                    i = 0
+                    while total < budget and len(selected) < 40:
+                        h = selected[i % len(selected)]
+                        d = float(h["end"]) - float(h["start"])
+                        selected.append(h)
+                        total += d
+                        i += 1
+                    log.info("recap clips job=%s: %d placed (%.1fs) for %.1fs narration",
+                             job_id, len(selected), total, narration_sec)
+                else:
+                    selected = valid
+
+                # Subtitle layout on the recap timeline (intro offset +
+                # placed clips in order); the last window is clamped so
+                # no cue runs past the narration end.
+                layout = []
+                t = intro_duration
+                for h in selected:
+                    s, e = float(h["start"]), float(h["end"])
+                    layout.append((t, s, e))
+                    t += e - s
+                if (narrated is not None and narration_sec > 0
+                        and layout and t > narration_sec):
+                    rs, os_, oe = layout[-1]
+                    layout[-1] = (rs, os_, os_ + max(0.1, narration_sec - rs))
+
+                # Cut the placed clips. Audio is forced to stereo
+                # 44100 Hz AAC: a mono source would otherwise break the
+                # -c copy concat the same way a mono intro did.
+                for i, hl in enumerate(selected):
+                    clip = workdir / f"clip_{i:02d}.mp4"
+                    cmd = [self.ffmpeg, "-y",
+                           "-ss", str(hl["start"]), "-to", str(hl["end"]),
+                           "-i", str(src),
+                           "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+                    if has_audio:
+                        cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
+                    cmd += [str(clip)]
+                    p = self._run(cmd, timeout=600)
+                    if p.returncode == 0 and clip.exists():
+                        clips.append(clip)
+                    else:
+                        res.warnings.append(f"clip {i} cut failed, skipped")
+                if not clips:
+                    res.errors.append("all highlight clips failed to cut")
+                    return res
+
+                # Concat: intro + clips + outro.
                 if intro:
                     parts.append(intro)
                 parts.extend(clips)
@@ -388,56 +505,54 @@ class RenderingAgent:
                     res.errors.append(f"concat failed: {p.stderr[-300:]}")
                     return res
 
-            # 2b) TTS narration (optional): replace the audio track with a
-            # synthesized reading of the recap summary, fitted to the
-            # recap duration. TTS failure NEVER fails the render — the
-            # original audio is kept and a warning is recorded.
-            if narration_text and narration_text.strip():
+                # The narration is king: pad the video (freeze last
+                # frame) when the clips fall short of it. When the
+                # clips run long, replace_audio's -shortest trims to
+                # the narration below.
+                if narrated is not None and narration_sec > 0:
+                    jd = self._duration(joined) or 0.0
+                    if jd < narration_sec - 0.25:
+                        padded = self._pad_to_duration(
+                            workdir, joined, narration_sec, has_audio)
+                        if padded != joined:
+                            joined = padded
+                            log.info("recap padded job=%s: %.1fs -> %.1fs",
+                                     job_id, jd, narration_sec)
+
+            # Audio: swap in the narration. Dubbing fits the narration
+            # to the full video (video is king there); recap keeps the
+            # narration as synthesized (video already follows it).
+            if narrated is not None:
                 try:
                     from backend.agents.agent_tts import (  # noqa: PLC0415
-                        fit_narration_to_duration, replace_audio,
-                        synthesize_narration, validate_tts_prefs)
-                    validate_tts_prefs(tts_provider, tts_voice, tts_rate, tts_pitch)
-                    narrated = synthesize_narration(
-                        narration_text, tts_provider, tts_voice, tts_rate,
-                        tts_pitch, workdir, settings=settings)
-                    # Edge TTS is network-fragile (its endpoint can be
-                    # unreachable from a datacenter). Fall back to Gemini
-                    # TTS — the Gemini API is already proven reachable —
-                    # rather than silently keeping the original audio.
-                    if narrated is None and tts_provider == "edge":
-                        gemini_voice = "Charon" if tts_voice == "thiha" else "Kore"
-                        narrated = synthesize_narration(
-                            narration_text, "gemini", gemini_voice,
-                            tts_rate, 0, workdir, settings=settings)
-                        if narrated is not None:
-                            res.warnings.append(
-                                "edge TTS unavailable; used Gemini voice "
-                                f"{gemini_voice} instead")
-                    if narrated is not None:
+                        fit_narration_to_duration, replace_audio)
+                    audio_src = narrated
+                    if output_mode == "dubbing":
                         target = self._duration(joined)
-                        fitted = fit_narration_to_duration(narrated, target, workdir) if target else None
-                        narrated_video = workdir / "joined_narrated.mp4"
-                        if replace_audio(joined, fitted or narrated, narrated_video):
-                            joined = narrated_video
-                            res.warnings.append(
-                                f"narration: {tts_provider}/{tts_voice}")
-                        else:
-                            res.warnings.append("narration audio replace failed; kept original audio")
+                        fitted = fit_narration_to_duration(
+                            narrated, target, workdir) if target else None
+                        audio_src = fitted or narrated
+                    narrated_video = workdir / "joined_narrated.mp4"
+                    if replace_audio(joined, audio_src, narrated_video):
+                        joined = narrated_video
+                        res.warnings.append(
+                            f"narration: {tts_provider}/{tts_voice}")
                     else:
-                        res.warnings.append("narration synthesis failed; kept original audio")
+                        res.warnings.append(
+                            "narration audio replace failed; kept original audio")
                 except Exception as exc:
-                    log.warning("tts narration skipped job=%s: %s", job_id, exc)
-                    res.warnings.append(f"narration skipped: {exc}")
+                    log.warning("audio replace skipped job=%s: %s", job_id, exc)
+                    res.warnings.append(f"audio replace skipped: {exc}")
 
             # 3) subtitles — recap: remapped to the recap timeline
-            # (intro + clips + outro), NOT the original timeline.
+            # (intro + placed clips + outro), NOT the original timeline.
             # Dubbing: the transcript stays on the ORIGINAL timeline
             # (the output IS the original video), so no remap.
             srt_path = workdir / "subtitles.srt"
             subs = (transcript or []) if output_mode == "dubbing" \
                 else self._remap_transcript(
-                    transcript or [], highlights, intro_duration)
+                    transcript or [], highlights, intro_duration,
+                    layout=layout)
             self._write_srt(srt_path, subs)
             res.subtitle_path = str(srt_path)
             final = workdir / "recap_final.mp4"

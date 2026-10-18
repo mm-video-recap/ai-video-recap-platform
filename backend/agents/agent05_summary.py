@@ -51,9 +51,8 @@ class SummaryAgent:
                           "summary_short: 2-3 sentences with punch. "
                           "summary_long: 3-4 dramatic paragraphs."),
             "custom": ("STYLE: CUSTOM recap. "
-                       f"Target length: about {style.get('target_sec', 120)} "
-                       "seconds of narration. "
-                       + (f"User-requested tone: {tone}. " if tone else "")),
+                       + (f"User-requested tone: {tone}. " if tone else "")
+                       + "Let the script be as long or short as the story needs."),
         }.get(style_name, "")
         return f"""You are an expert video recap writer. Write the recap in {lang_name}.
 

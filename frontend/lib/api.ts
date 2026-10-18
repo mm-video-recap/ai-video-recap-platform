@@ -129,7 +129,7 @@ export function uploadVideo(
     // Any other keys in `extra` are sent as form fields (ignored by backend).
     const { output_lang, subtitle_language,
             output_mode,
-            recap_style, recap_length_sec, recap_tone,
+            recap_style, recap_tone,
             intro_enabled, outro_enabled,
             voice_mode, tts_provider, tts_voice, tts_rate, tts_pitch,
             ...formExtra } =
@@ -142,7 +142,6 @@ export function uploadVideo(
       subtitle_language: typeof subtitle_language === "string" ? subtitle_language : undefined,
       output_mode: typeof output_mode === "string" ? output_mode : undefined,
       recap_style: typeof recap_style === "string" ? recap_style : undefined,
-      recap_length_sec: typeof recap_length_sec === "string" ? recap_length_sec : undefined,
       recap_tone: typeof recap_tone === "string" ? recap_tone : undefined,
       intro_enabled: typeof intro_enabled === "string" ? intro_enabled : undefined,
       outro_enabled: typeof outro_enabled === "string" ? outro_enabled : undefined,

@@ -54,7 +54,6 @@ function UploadContent() {
   const [subtitleLang, setSubtitleLang] = useState<Lang>(prefs.defaultLanguage as "my" | "en");
   const [outputMode, setOutputMode] = useState<"recap" | "dubbing">("recap");
   const [recapStyle, setRecapStyle] = useState<"short" | "detailed" | "cinematic" | "custom">("detailed");
-  const [recapLengthSec, setRecapLengthSec] = useState(120);
   const [recapTone, setRecapTone] = useState("");
   const [introEnabled, setIntroEnabled] = useState(true);
   const [outroEnabled, setOutroEnabled] = useState(true);
@@ -146,11 +145,8 @@ function UploadContent() {
           ...(outputMode === "recap"
             ? {
                 recap_style: recapStyle,
-                ...(recapStyle === "custom"
-                  ? {
-                      recap_length_sec: String(Math.max(15, Math.min(900, recapLengthSec || 120))),
-                      ...(recapTone.trim() ? { recap_tone: recapTone.trim().slice(0, 200) } : {}),
-                    }
+                ...(recapStyle === "custom" && recapTone.trim()
+                  ? { recap_tone: recapTone.trim().slice(0, 200) }
                   : {}),
               }
             : {}),
@@ -281,36 +277,16 @@ function UploadContent() {
                   ])}
                   <p className="mt-2 text-xs text-[var(--muted)]">{t(`upload.styleDesc_${recapStyle}`)}</p>
                   {recapStyle === "custom" && (
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <span className="label-text">{t("upload.customLength")}</span>
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="range"
-                            min={15}
-                            max={600}
-                            step={15}
-                            value={recapLengthSec}
-                            onChange={(e) => setRecapLengthSec(Number(e.target.value))}
-                            className="w-full"
-                            aria-label={t("upload.customLength")}
-                          />
-                          <span className="w-20 shrink-0 text-right text-sm font-semibold">
-                            {Math.floor(recapLengthSec / 60)}:{String(recapLengthSec % 60).padStart(2, "0")}
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <span className="label-text">{t("upload.customTone")}</span>
-                        <input
-                          type="text"
-                          value={recapTone}
-                          onChange={(e) => setRecapTone(e.target.value)}
-                          maxLength={200}
-                          placeholder={t("upload.customTonePlaceholder")}
-                          className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
-                        />
-                      </div>
+                    <div className="mt-3">
+                      <span className="label-text">{t("upload.customTone")}</span>
+                      <input
+                        type="text"
+                        value={recapTone}
+                        onChange={(e) => setRecapTone(e.target.value)}
+                        maxLength={200}
+                        placeholder={t("upload.customTonePlaceholder")}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                      />
                     </div>
                   )}
                 </div>

@@ -24,15 +24,10 @@ _EXCITED = re.compile(r"[!?？！]|wow|amazing|incredible|breaking|shocking|fina
 
 class HighlightsAgent:
     def __init__(self, top_n: int = 8, min_clip_sec: float = 5.0,
-                 max_clip_sec: float = 45.0,
-                 max_total_sec: float | None = None):
+                 max_clip_sec: float = 45.0):
         self.top_n = top_n
         self.min_clip_sec = min_clip_sec
         self.max_clip_sec = max_clip_sec
-        # Cap on the TOTAL recap duration (recap style): keep the
-        # highest-scoring clips whose combined duration fits, always
-        # keeping at least the top clip.
-        self.max_total_sec = max_total_sec
 
     def select(self, transcript: list[dict], segments: list[dict],
                vision: dict, job_id: str,
@@ -42,16 +37,6 @@ class HighlightsAgent:
             scored = sorted((self._score(c, transcript) for c in cands),
                             key=lambda h: h["score"], reverse=True)
             highlights = scored[:self.top_n]
-            if self.max_total_sec:
-                kept: list[dict] = []
-                total = 0.0
-                for h in highlights:
-                    dur = max(0.0, float(h.get("end", 0)) - float(h.get("start", 0)))
-                    if kept and total + dur > self.max_total_sec:
-                        continue
-                    kept.append(h)
-                    total += dur
-                highlights = kept
             log.info("highlights job=%s: %d selected from %d candidates",
                      job_id, len(highlights), len(cands))
             return {"highlights": highlights, "degraded": False}

@@ -233,26 +233,18 @@ def process_video(self, job_id: str,
 def _recap_style_config(prefs: dict) -> dict:
     """Map the user's recap style (video.meta) to pipeline params.
 
-    Returns {"name", "top_n", "max_total_sec", "target_sec", "tone"}.
-    Dubbing ignores the style; the render step never sees it.
+    Returns {"name", "top_n", "tone"}. There are deliberately NO
+    minute caps (user 2026-10-18): the recap is as long/short as the
+    AI script, and the render step stretches the video to the
+    narration. top_n is the highlight candidate pool; tone guides
+    the summary prompt.
     """
     name = prefs.get("recap_style", "detailed")
     if name not in ("short", "detailed", "cinematic", "custom"):
         name = "detailed"
-    if name == "short":
-        return {"name": name, "top_n": 4, "max_total_sec": 60,
-                "target_sec": 60, "tone": ""}
-    if name == "cinematic":
-        return {"name": name, "top_n": 8, "max_total_sec": 180,
-                "target_sec": 180, "tone": ""}
-    if name == "custom":
-        target = max(15, min(900, int(prefs.get("recap_length_sec") or 120)))
-        return {"name": name,
-                "top_n": max(2, min(16, target // 15)),
-                "max_total_sec": target, "target_sec": target,
-                "tone": (prefs.get("recap_tone") or "")[:200]}
-    return {"name": name, "top_n": 10, "max_total_sec": 300,
-            "target_sec": 300, "tone": ""}
+    top_n = {"short": 4, "cinematic": 8}.get(name, 12)
+    tone = (prefs.get("recap_tone") or "")[:200] if name == "custom" else ""
+    return {"name": name, "top_n": top_n, "tone": tone}
 
 
 @celery_app.task(bind=True, name="backend.celery_app.tasks.ai_analyze",
@@ -285,8 +277,8 @@ def ai_analyze(self, job_id: str,
         video = db.query(Video).filter_by(id=job.video_id).one_or_none()
         prefs = (video.meta or {}) if video is not None else {}
         style = _recap_style_config(prefs)
-        log.info("ai_analyze job=%s recap_style=%s top_n=%d max_total_sec=%s",
-                 job_id, style["name"], style["top_n"], style["max_total_sec"])
+        log.info("ai_analyze job=%s recap_style=%s top_n=%d",
+                 job_id, style["name"], style["top_n"])
 
         # Per-user AI keys arrive as task kwargs (see docstring):
         # no key material is read from video.meta anymore.
@@ -329,7 +321,7 @@ def ai_analyze(self, job_id: str,
                          message="Picking highlights…")
         from backend.agents.agent06_highlights import HighlightsAgent  # noqa: PLC0415
         highlights_out = HighlightsAgent(
-            top_n=style["top_n"], max_total_sec=style["max_total_sec"]).select(
+            top_n=style["top_n"]).select(
             transcript, proc.get("segments", []), vision_out, job_id,
             duration_sec=proc.get("duration_sec"))
 
