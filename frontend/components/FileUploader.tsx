@@ -86,8 +86,7 @@ export default function FileUploader({ file, onFile, error }: FileUploaderProps)
             type="file"
             accept={ACCEPTED_VIDEO_TYPES.map((e) => `.${e}`).join(",")}
             className="sr-only"
-            aria-hidden
-            tabIndex={-1}
+            aria-label={t("upload.dropTitle")}
             onChange={(e) => pick(e.target.files?.[0])}
           />
         </motion.div>
