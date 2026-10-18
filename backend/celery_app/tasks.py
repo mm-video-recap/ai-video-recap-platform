@@ -396,18 +396,25 @@ def _is_quota_error_text(text: str) -> bool:
 
 
 def _job_hit_quota(prev: dict) -> bool:
-    """True when any stored AI-stage error signals quota exhaustion
-    (speech / summary / vision frame errors). Translation failures in
-    render are not separately tracked — they use the same provider
-    pool, so a quota wall there almost always shows up in these
-    earlier stages first."""
-    speech_err = (prev.get("speech", {}) or {}).get("error", "")
-    summary_err = (prev.get("summary", {}) or {}).get("error", "")
-    vision = prev.get("vision", {}) or {}
-    errs = [speech_err, summary_err, vision.get("error", "")]
-    errs += [f.get("error", "") for f in vision.get("frames", [])
-             if isinstance(f, dict)]
-    return any(_is_quota_error_text(e) for e in errs)
+    """True when quota exhaustion left the job's AI output actually
+    incomplete — a stage failed with a quota error AND produced no
+    usable output. Transient 429s that the fallback providers absorbed
+    (e.g. a few vision frames hitting Gemini 429 while Groq still
+    delivered the full summary) must NOT raise the banner on a job
+    that completed fine — the user sees a scary 'quota ran out'
+    warning for a working job and asks 'but I added Groq!'
+    (live 2026-10-18: cat-video job showed the banner despite a full
+    Myanmar summary + burned subtitles, from frame-level 429s)."""
+    speech = prev.get("speech", {}) or {}
+    summary = prev.get("summary", {}) or {}
+    if _is_quota_error_text(speech.get("error", "")) \
+            and not speech.get("transcript"):
+        return True
+    if _is_quota_error_text(summary.get("error", "")) \
+            and not (summary.get("summary_short")
+                     or summary.get("summary_long")):
+        return True
+    return False
 
 
 def _translate_segments(settings, segments: list[dict], target_lang: str,

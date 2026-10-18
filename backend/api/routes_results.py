@@ -31,6 +31,17 @@ def _get_owned_job(db: Session, job_id: str, user: User) -> Job:
     return job
 
 
+def _live_quota_flag(data: dict) -> bool:
+    """Recompute quota_exhausted from the stored AI-stage outputs with
+    the current logic (local import: keeps this module importable
+    without the celery task graph)."""
+    from backend.celery_app.tasks import _job_hit_quota  # noqa: PLC0415
+    try:
+        return bool(_job_hit_quota(data or {}))
+    except Exception:
+        return bool((data or {}).get("quota_exhausted", False))
+
+
 def _resolve_url(output: Output, job_id: str, kind: str, base_url: str) -> str | None:
     """
     Download URL for an output: cloud presigned URL or local API route.
@@ -113,7 +124,11 @@ def get_results(job_id: str, request: Request,
                     for s in speech.get("transcript", []) if isinstance(s, dict)],
         subtitle_url=_resolve_url(sub_out, job_id, "subtitles", base_url) if sub_out else None,
         warnings=[str(w) for w in (data.get("render", {}) or {}).get("warnings", [])],
-        quota_exhausted=bool(data.get("quota_exhausted", False)),
+        # Recompute the quota flag live from the stored stage outputs
+        # (not the persisted value): the 2026-10-18 fix narrowed the
+        # flag to "quota actually left output incomplete", and old jobs
+        # stored True from transient 429s their fallbacks absorbed.
+        quota_exhausted=_live_quota_flag(data),
         output_mode=_video_output_mode(db, job.video_id),
         recap_style=_video_recap_style(db, job.video_id),
     )

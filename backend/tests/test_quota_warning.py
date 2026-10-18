@@ -21,15 +21,29 @@ def test_is_quota_error_text():
 
 def test_job_hit_quota():
     assert tasks._job_hit_quota({}) is False
+    # Stage failed on quota AND produced nothing -> flag.
     assert tasks._job_hit_quota(
         {"summary": {"error": "all providers failed: gemini: all 11 keys exhausted"}}
     ) is True
     assert tasks._job_hit_quota(
         {"speech": {"error": "gemini transcription HTTP 429"}}
     ) is True
+    # Quota error but the fallback delivered output -> NO flag.
+    # (A few vision frames hitting 429 while Groq still wrote the
+    # full summary must not scare the user on a completed job.)
     assert tasks._job_hit_quota(
-        {"vision": {"frames": [{"error": "gemini vision: quota exceeded"}]}}
-    ) is True
+        {"summary": {"error": "gemini: all 11 keys exhausted",
+                     "summary_short": "အကျဉ်းချုပ်",
+                     "summary_long": "အသေးစိတ်"}}
+    ) is False
+    assert tasks._job_hit_quota(
+        {"speech": {"error": "gemini transcription HTTP 429",
+                    "transcript": [{"text": "hi"}]}}
+    ) is False
+    assert tasks._job_hit_quota(
+        {"vision": {"frames": [{"error": "gemini vision: quota exceeded"}]},
+         "summary": {"summary_short": "ok", "summary_long": "ok"}}
+    ) is False
     assert tasks._job_hit_quota(
         {"summary": {"error": "API key not valid"}}
     ) is False
@@ -45,10 +59,16 @@ def _complete_job(job_id, quota_exhausted):
     try:
         job = db.query(Job).filter_by(id=job_id).one()
         job.status = "completed"
+        # The API recomputes quota_exhausted live from the stage
+        # outputs (2026-10-18 fix): True needs a quota error AND no
+        # usable output; a stored True alone is not trusted.
+        err = "gemini: all keys exhausted (HTTP 429)" if quota_exhausted else ""
         job.result = {
             "summary": {"title": "T", "description": "", "summary_short": "",
-                        "summary_long": "", "key_points": [], "timeline": []},
-            "speech": {"transcript": []},
+                        "summary_long": "", "key_points": [], "timeline": [],
+                        **({"error": err} if err else {})},
+            "speech": {"transcript": [],
+                       **({"error": err} if err else {})},
             "highlights": [],
             "render": {"warnings": []},
             "quota_exhausted": quota_exhausted,
