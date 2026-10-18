@@ -454,8 +454,10 @@ def _translate_text(settings, text: str, target_lang: str,
     if target is None or not (text or "").strip():
         return text, True
     if target_lang == "my" and _contains_myanmar(text):
+        log.info("narration already in %s, skipping translation", target_lang)
         return text, True
     if target_lang == "en" and text.isascii():
+        log.info("narration already in %s, skipping translation", target_lang)
         return text, True
     src = (source_lang or "").lower()
     if (target_lang == "my" and src in ("my", "mya", "myanmar", "burmese")) or \
