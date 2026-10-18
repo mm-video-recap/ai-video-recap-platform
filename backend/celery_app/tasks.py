@@ -704,6 +704,9 @@ def render_recap(self, job_id: str,
             intro_clip=intro_clip,
             outro_clip=outro_clip,
             narration_text=narration_text or None,
+            blur_regions=prefs.get("blur_regions"),
+            subtitle_y=float(prefs.get("subtitle_y", 0.96) or 0.96),
+            subtitle_size=float(prefs.get("subtitle_size", 0.033) or 0.033),
             **tts_kwargs)
 
         if not result.ok:

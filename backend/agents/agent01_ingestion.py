@@ -249,6 +249,9 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
                       tts_pitch: int = 0,
                       intro_video_key: str = "",
                       outro_video_key: str = "",
+                      blur_regions: list | None = None,
+                      subtitle_y: float = 0.96,
+                      subtitle_size: float = 0.033,
                       priority: int = 3) -> tuple:
     """
     Create the Video + Job rows for a successful ingestion.
@@ -302,6 +305,18 @@ def persist_ingestion(db, result: "IngestionResult", *, user_id: str,
         video.meta["intro_video_key"] = str(intro_video_key)
     if outro_video_key:
         video.meta["outro_video_key"] = str(outro_video_key)
+    # Preview-editor overlays (user 2026-10-18): blur boxes as
+    # normalized {x,y,w,h,intensity} boxes + subtitle position/size as
+    # fractions of video height. The render step burns them into the
+    # final video exactly as edited.
+    if blur_regions:
+        video.meta["blur_regions"] = [
+            {"x": float(b["x"]), "y": float(b["y"]),
+             "w": float(b["w"]), "h": float(b["h"]),
+             "intensity": int(b.get("intensity", 22))}
+            for b in blur_regions if isinstance(b, dict)]
+    video.meta["subtitle_y"] = float(subtitle_y)
+    video.meta["subtitle_size"] = float(subtitle_size)
     job = Job(
         id=result.job_id,
         video_id=result.video_id,

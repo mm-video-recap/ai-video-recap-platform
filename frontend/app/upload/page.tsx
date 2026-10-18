@@ -23,9 +23,16 @@ import {
 import AppShell from "@/components/AppShell";
 import RequireAuth from "@/components/RequireAuth";
 import FileUploader from "@/components/FileUploader";
+import PreviewEditor, { type PreviewSettings } from "@/components/PreviewEditor";
 import ProgressBar from "@/components/ProgressBar";
 import Button from "@/components/Button";
 import Card from "@/components/Card";
+
+const DEFAULT_PREVIEW: PreviewSettings = {
+  regions: [],
+  subtitleY: 0.96,
+  subtitleSize: 0.033,
+};
 
 type Lang = "my" | "en" | "none";
 
@@ -60,6 +67,12 @@ function UploadContent() {
   const [introFile, setIntroFile] = useState<File | null>(null);
   const [outroFile, setOutroFile] = useState<File | null>(null);
   const [voice, setVoice] = useState<VoicePrefs>(() => loadVoicePrefs());
+
+  // Preview editor (blur boxes + subtitle styling, user 2026-10-18):
+  // drawn on the main canvas before upload; burned into the final
+  // video exactly as edited.
+  const [editingPreview, setEditingPreview] = useState(true);
+  const [preview, setPreview] = useState<PreviewSettings>(DEFAULT_PREVIEW);
 
   const updateVoice = (patch: Partial<VoicePrefs>) => {
     setVoice((prev) => {
@@ -109,6 +122,9 @@ function UploadContent() {
       return;
     }
     setFile(f);
+    // New file -> fresh preview canvas.
+    setPreview(DEFAULT_PREVIEW);
+    setEditingPreview(true);
   };
 
   const startUpload = async () => {
@@ -163,6 +179,13 @@ function UploadContent() {
           tts_voice: voice.ttsVoice,
           tts_rate: String(voice.ttsRate),
           tts_pitch: String(voice.ttsPitch),
+          // Preview editor: blur boxes + subtitle position/size, as
+          // drawn on the canvas. Sent as query params (not secrets).
+          ...(preview.regions.length > 0
+            ? { blur_regions: JSON.stringify(preview.regions) }
+            : {}),
+          subtitle_y: String(preview.subtitleY),
+          subtitle_size: String(preview.subtitleSize),
           // Per-user AI keys from Settings (one entry for everything):
           // form fields, never in the URL. When set, this job spends
           // the user's own quota.
@@ -254,6 +277,38 @@ function UploadContent() {
         {file && !uploading && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
             <Card className="p-6">
+              <h2 className="mb-1 text-lg font-bold">{t("preview.title")}</h2>
+              <p className="mb-4 text-sm text-[var(--muted)]">
+                {t("preview.subtitle")}
+              </p>
+              {editingPreview ? (
+                <PreviewEditor
+                  file={file}
+                  initial={preview}
+                  onDone={(s) => {
+                    setPreview(s);
+                    setEditingPreview(false);
+                  }}
+                />
+              ) : (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                  <span className="text-sm">
+                    {t("preview.summary", {
+                      n: preview.regions.length,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingPreview(true)}
+                    className="shrink-0 text-sm font-semibold text-indigo-500 underline"
+                  >
+                    {t("preview.editAgain")}
+                  </button>
+                </div>
+              )}
+            </Card>
+
+            <Card className="mt-6 p-6">
               <h2 className="mb-4 text-lg font-bold">{t("upload.settingsTitle")}</h2>
               <div className="space-y-5">
                 <div>

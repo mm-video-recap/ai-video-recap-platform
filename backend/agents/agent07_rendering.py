@@ -96,22 +96,40 @@ class RenderingAgent:
     def _font_family(font: Path) -> str | None:
         return _FONT_FAMILY_BY_STEM.get(font.stem)
 
-    def _subtitle_vf(self, srt_path: Path, font: Path) -> str:
+    def _subtitle_vf(self, srt_path: Path, font: Path,
+                       font_size_frac: float = 0.033,
+                       sub_y_frac: float = 0.96,
+                       video_h: int = 720) -> str:
         """libass burn-in filter. force_style pins the Fontname to the
         font we found: without it libass falls back to its default
         style font (usually a Latin-only font), and Myanmar cues come
         out as tofu boxes even when a Myanmar font sits in fontsdir.
-        Only Fontname/size/outline are forced; everything else keeps
-        libass defaults. Verified locally: Padauk + libass shapes
-        Myanmar correctly (e-vowel in front, stacks combined)."""
+        Only Fontname/size/alignment/outline are forced; everything
+        else keeps libass defaults. Verified locally: Padauk + libass
+        shapes Myanmar correctly (e-vowel in front, stacks combined).
+
+        font_size_frac / sub_y_frac are fractions of the video height
+        (from the preview editor, user 2026-10-18): sub_y 0 = top,
+        1 = bottom. Top half uses Alignment 8 (top-center), bottom
+        half Alignment 2 (bottom-center), with MarginV as the offset
+        from the nearer edge.
+        """
         family = self._font_family(font)
         vf = f"subtitles={srt_path}:fontsdir={font.parent}"
         if family:
+            h = max(240, int(video_h or 720))
+            fsize = max(8, round(max(0.01, min(0.12, font_size_frac)) * h))
+            y = max(0.0, min(1.0, sub_y_frac))
+            if y < 0.5:
+                alignment, margin_v = 8, round(y * h)
+            else:
+                alignment, margin_v = 2, round((1.0 - y) * h)
             vf += (
                 ":force_style='Fontname=" + family +
-                ",Fontsize=24,PrimaryColour=&H00FFFFFF,"
+                f",Fontsize={fsize},Alignment={alignment},"
+                "PrimaryColour=&H00FFFFFF,"
                 "OutlineColour=&H80000000,BorderStyle=1,Outline=2,"
-                "Shadow=0,MarginV=28'"
+                f"Shadow=0,MarginV={margin_v}'"
             )
         return vf
 
@@ -227,6 +245,68 @@ class RenderingAgent:
         except Exception:
             return None
 
+    def _dimensions(self, path: Path) -> tuple[int, int]:
+        """(width, height) via ffprobe; (0, 0) when unavailable."""
+        ffprobe = shutil.which("ffprobe")
+        if not ffprobe:
+            return (0, 0)
+        try:
+            proc = subprocess.run(
+                [ffprobe, "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height",
+                 "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=30, check=False)
+            w, h = (proc.stdout or "").strip().split(",")[:2]
+            return (int(w), int(h))
+        except Exception:
+            return (0, 0)
+
+    def _blur_graph(self, regions: list[dict] | None) -> tuple[str, str]:
+        """FFmpeg filtergraph that blurs each preview-editor region.
+
+        Regions use normalized 0-1 coords (as drawn on the preview);
+        the graph addresses them with iw/ih expressions, so it works
+        at any render resolution. Coords are floored to even numbers
+        (yuv420p crop/overlay requirement). Returns (graph, out_pad);
+        ("", "0:v") when there is nothing valid to blur — invalid
+        boxes are skipped, never fail the job.
+        """
+        parts: list[str] = []
+        prev = "0:v"
+        n = 0
+        for r in (regions or [])[:10]:
+            if not isinstance(r, dict):
+                continue
+            try:
+                x, y = float(r["x"]), float(r["y"])
+                w, h = float(r["w"]), float(r["h"])
+                radius = int(r.get("intensity", 22))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1
+                    and 0 < h <= 1 and x + w <= 1 and y + h <= 1):
+                continue
+            radius = max(1, min(50, radius))
+            # boxblur's chroma radius must stay < 18 — pin it
+            # explicitly; the luma radius carries the strength.
+            chroma = min(radius, 12)
+            blur = (f"boxblur=luma_radius={radius}:luma_power=1:"
+                    f"chroma_radius={chroma}:chroma_power=1")
+            crop = (f"crop=w=floor({w}*iw/2)*2:h=floor({h}*ih/2)*2:"
+                    f"x=floor({x}*iw/2)*2:y=floor({y}*ih/2)*2")
+            # NOTE: overlay has no iw/ih constants — main frame size is
+            # main_w/main_h there.
+            ox = f"floor({x}*main_w/2)*2"
+            oy = f"floor({y}*main_h/2)*2"
+            parts.append(
+                f"[{prev}]{crop},{blur}[bb{n}];"
+                f"[{prev}][bb{n}]overlay=x={ox}:y={oy}[v{n}]")
+            prev = f"v{n}"
+            n += 1
+        if not parts:
+            return ("", "0:v")
+        return (";".join(parts), prev)
+
     def _normalize_video_clip(self, workdir: Path, src: str | Path, name: str,
                               has_audio: bool) -> tuple[Path | None, float]:
         """Re-encode an uploaded intro/outro video to the recap layout
@@ -310,6 +390,9 @@ class RenderingAgent:
                tts_voice: str = "thiha",
                tts_rate: float = 1.0,
                tts_pitch: int = 0,
+               blur_regions: list | None = None,
+               subtitle_y: float = 0.96,
+               subtitle_size: float = 0.033,
                settings=None) -> RenderResult:
         res = RenderResult(ok=False, job_id=job_id)
         src = Path(normalized_path)
@@ -558,7 +641,11 @@ class RenderingAgent:
             final = workdir / "recap_final.mp4"
             font = self._find_font()
             if font and srt_path.stat().st_size > 0:
-                vf = self._subtitle_vf(srt_path, font)
+                _w, _h = self._dimensions(joined)
+                vf = self._subtitle_vf(srt_path, font,
+                                       font_size_frac=subtitle_size,
+                                       sub_y_frac=subtitle_y,
+                                       video_h=_h or 720)
                 burn_cmd = [self.ffmpeg, "-y", "-i", str(joined),
                             "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
                             "-crf", "23", "-c:a", "copy",
@@ -613,11 +700,29 @@ class RenderingAgent:
             # not play in browsers). One uniform re-encode pass
             # guarantees a clean, browser-playable file: constant
             # 30fps, yuv420p, stereo AAC, moov at the front.
+            # Preview-editor blur boxes (user 2026-10-18) are burned
+            # here too, so they land on the final video exactly as
+            # drawn — regardless of the subtitle path above.
             normed = workdir / "recap_final_norm.mp4"
-            cmd = [self.ffmpeg, "-y", "-i", str(final),
-                   "-vf", "fps=30,format=yuv420p",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+            blur_graph, blur_out = self._blur_graph(blur_regions)
+            if blur_graph:
+                log.info("applying %d blur region(s) job=%s",
+                         blur_graph.count("boxblur"), job_id)
+            cmd = [self.ffmpeg, "-y", "-i", str(final)]
+            if blur_graph:
+                # The blur graph has 2-input overlay filters, which a
+                # simple -vf chain cannot express — use -filter_complex
+                # with explicit maps. No-blur jobs keep the original
+                # -vf path untouched.
+                fc = (f"{blur_graph};"
+                      f"[{blur_out}]fps=30,format=yuv420p[vout]")
+                cmd += ["-filter_complex", fc, "-map", "[vout]"]
+            else:
+                cmd += ["-vf", "fps=30,format=yuv420p"]
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
             if self._has_audio(final):
+                if blur_graph:
+                    cmd += ["-map", "0:a?"]
                 cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100"]
             else:
                 cmd += ["-an"]

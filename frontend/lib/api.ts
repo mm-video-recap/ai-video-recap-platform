@@ -132,6 +132,7 @@ export function uploadVideo(
             recap_style, recap_tone,
             intro_enabled, outro_enabled,
             voice_mode, tts_provider, tts_voice, tts_rate, tts_pitch,
+            blur_regions, subtitle_y, subtitle_size,
             ...formExtra } =
       extra ?? {};
     const qs = new URLSearchParams();
@@ -150,6 +151,9 @@ export function uploadVideo(
       tts_voice: typeof tts_voice === "string" ? tts_voice : undefined,
       tts_rate: typeof tts_rate === "string" ? tts_rate : undefined,
       tts_pitch: typeof tts_pitch === "string" ? tts_pitch : undefined,
+      blur_regions: typeof blur_regions === "string" ? blur_regions : undefined,
+      subtitle_y: typeof subtitle_y === "string" ? subtitle_y : undefined,
+      subtitle_size: typeof subtitle_size === "string" ? subtitle_size : undefined,
     };
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== "") qs.set(k, v);

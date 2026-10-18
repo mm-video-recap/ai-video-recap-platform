@@ -141,6 +141,15 @@ def upload_video(request: Request, file: UploadFile = File(...),
                  tts_voice: str = Query(default="thiha"),
                  tts_rate: float = Query(default=1.0, ge=0.5, le=2.0),
                  tts_pitch: int = Query(default=0, ge=-20, le=20),
+                 # Preview editor (blur + subtitle styling, user
+                 # 2026-10-18): blur_regions is a JSON array of
+                 # {x,y,w,h,intensity} with normalized 0-1 coords;
+                 # subtitle_y = vertical position (0=top, 1=bottom),
+                 # subtitle_size = font size, both as fractions of
+                 # video height. Burned into the final video at render.
+                 blur_regions: str = Query(default="", max_length=4000),
+                 subtitle_y: float = Query(default=0.96, ge=0.0, le=1.0),
+                 subtitle_size: float = Query(default=0.033, ge=0.01, le=0.12),
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     settings = get_settings()
@@ -248,6 +257,41 @@ def upload_video(request: Request, file: UploadFile = File(...),
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
 
+        # Preview-editor blur regions: JSON array of normalized boxes.
+        parsed_blur: list[dict] = []
+        if blur_regions:
+            import json  # noqa: PLC0415
+            try:
+                data = json.loads(blur_regions)
+            except (json.JSONDecodeError, ValueError):
+                raise HTTPException(status_code=400,
+                                    detail="blur_regions must be a JSON array")
+            if not isinstance(data, list) or len(data) > 10:
+                raise HTTPException(
+                    status_code=400,
+                    detail="blur_regions must be a JSON array of at most 10 boxes")
+            for box in data:
+                try:
+                    x, y = float(box["x"]), float(box["y"])
+                    w, h = float(box["w"]), float(box["h"])
+                    intensity = int(box.get("intensity", 22))
+                except (KeyError, TypeError, ValueError):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="each blur box needs x,y,w,h numbers")
+                if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1
+                        and 0 < h <= 1 and x + w <= 1 and y + h <= 1):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="blur box coordinates must be normalized "
+                               "0-1 inside the frame")
+                if not (1 <= intensity <= 50):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="blur intensity must be 1-50")
+                parsed_blur.append(
+                    {"x": x, "y": y, "w": w, "h": h, "intensity": intensity})
+
         video, job = persist_ingestion(
             db, result, user_id=user.id, storage_path=stored_path,
             output_lang=output_lang,
@@ -264,6 +308,9 @@ def upload_video(request: Request, file: UploadFile = File(...),
             tts_pitch=tts_pitch,
             intro_video_key=intro_video_key,
             outro_video_key=outro_video_key,
+            blur_regions=parsed_blur,
+            subtitle_y=subtitle_y,
+            subtitle_size=subtitle_size,
             priority=PRIORITY_HIGH if user.is_admin else PRIORITY_NORMAL)
         db.commit()
         log_event(db, user.id, "video_uploaded",

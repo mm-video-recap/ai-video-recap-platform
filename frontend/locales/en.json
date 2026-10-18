@@ -580,6 +580,19 @@
     "title": "Upload video",
     "uploading": "Uploading… {pct}%"
   },
+  "preview": {
+    "title": "Preview — Edit Blur & Subtitles",
+    "subtitle": "Draw blur boxes on the video and move the subtitle line. Tap Done when finished — the result video will look exactly like this.",
+    "addBlur": "Add blur",
+    "done": "Done",
+    "removeBlur": "Remove this blur box",
+    "blurStrength": "Blur strength",
+    "subtitleSize": "Subtitle size",
+    "subtitleSample": "Subtitles appear here",
+    "hint": "Drag a blur box to move it; use the bottom-right handle to resize. Drag the subtitle line up or down.",
+    "editAgain": "Edit preview",
+    "summary": "{n} blur box(es) · subtitle position/size set"
+  },
   "videos": {
     "deleteConfirm": "Delete this video? This cannot be undone.",
     "deleted": "Video deleted.",
