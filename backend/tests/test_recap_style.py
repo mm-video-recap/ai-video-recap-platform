@@ -134,6 +134,29 @@ def test_summary_prompt_carries_style():
     assert "SHORT" in short
 
 
+def test_summary_prompt_language_rule_names_every_field():
+    """The language requirement must be unmissable: it names every text
+    field, so a fallback provider (e.g. Groq serving while Gemini is on
+    quota cooldown) cannot silently return English for a Burmese request
+    (live 2026-10-18: short-style job's summary came back English)."""
+    from unittest import mock
+
+    from backend.agents.agent05_summary import SummaryAgent
+
+    agent = SummaryAgent(mock.MagicMock())
+    my_prompt = agent._prompt("t", "v", "my", style={"name": "short"})
+    assert "Burmese (Myanmar language)" in my_prompt
+    assert "LANGUAGE IS MANDATORY" in my_prompt
+    for field in ("title", "description", "summary_short", "summary_long",
+                  "key_points", "timeline label"):
+        assert field in my_prompt
+    assert "Do not write any of them in English" in my_prompt
+
+    en_prompt = agent._prompt("t", "v", "en", style={"name": "detailed"})
+    assert "LANGUAGE IS MANDATORY" in en_prompt
+    assert "unless" in en_prompt and "English" in en_prompt
+
+
 def test_upload_recap_style_validated(client, auth_headers, make_mp4_bytes,
                                       monkeypatch):
     """recap_style=cinematic accepted; bogus rejected; custom params flow."""

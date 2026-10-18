@@ -68,6 +68,7 @@ Produce a recap as strict JSON matching this schema (numbers for start/end are s
 {_SUMMARY_SCHEMA}
 
 Rules:
+- LANGUAGE IS MANDATORY: every text value in the JSON — title, description, summary_short, summary_long, each key_points entry, each timeline label — MUST be written in {lang_name}. Do not write any of them in English unless {lang_name} itself is English.
 - timeline must cover the video in order, labels short, timestamps within the video length.
 - key_points: 5-10 concrete points actually present in the content.
 - Reply with ONLY the JSON object, no markdown fences."""
