@@ -271,15 +271,19 @@ def test_narration_text_falls_back_when_summary_failed():
     import backend.celery_app.tasks as tasks
 
     assert tasks._narration_text(
-        {"summary_short": "Real summary."}, []) == "Real summary."
+        {"summary_long": "Detailed story.", "summary_short": "Short."},
+        []) == "Detailed story."
     assert tasks._narration_text(
-        {"summary_short": "", "description": "",
+        {"summary_long": "", "summary_short": "Real summary."}, []) == "Real summary."
+    assert tasks._narration_text(
+        {"summary_long": "", "summary_short": "", "description": "",
          "key_points": ["Point one.", "Point two."]}, []) == "Point one. Point two."
     assert tasks._narration_text(
-        {"summary_short": "", "description": "", "key_points": []},
+        {"summary_long": "", "summary_short": "", "description": "", "key_points": []},
         [{"text": "hello world"}, {"text": "second line"}]) == "hello world second line"
     assert tasks._narration_text(
-        {"summary_short": "", "description": "", "key_points": []}, []) == ""
+        {"summary_long": "", "summary_short": "", "description": "",
+         "key_points": []}, []) == ""
 
 
 def test_gemini_tts_uses_settings_model(tmp_path, monkeypatch):

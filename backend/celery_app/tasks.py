@@ -504,16 +504,22 @@ def _translate_text(settings, text: str, target_lang: str,
 
 
 def _narration_text(summary: dict, transcript: list[dict]) -> str:
-    """Narration text for TTS: the recap summary, with fallbacks.
+    """Narration text for TTS: the DETAILED recap summary, with fallbacks.
+
+    The user chose (2026-10-18) narration from the detailed summary so
+    recaps are longer: the video follows the narration length, and the
+    narration follows the full story, not just the 2-3 sentence short
+    version.
 
     The summary step can fail (provider down / model retired) while the
     rest of the pipeline still runs. Previously an empty summary meant
     narration_text == "" and the TTS step silently never ran at all
     (live 2026-10-17: original audio kept, no TTS line in any log).
-    Fall back to key points, then to the transcript itself, so TTS
-    still narrates something in the recap language.
+    Fall back to the short summary, then key points, then the transcript
+    itself, so TTS still narrates something in the recap language.
     """
-    text = (summary.get("summary_short") or summary.get("description") or "").strip()
+    text = (summary.get("summary_long") or summary.get("summary_short")
+            or summary.get("description") or "").strip()
     if text:
         return text
     points = [str(p).strip() for p in (summary.get("key_points") or [])]
