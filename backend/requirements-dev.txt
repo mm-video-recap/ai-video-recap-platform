@@ -1,0 +1,4 @@
+# Test-only dependencies. CI installs this file; production images
+# install requirements.txt only (no test runner in prod).
+-r requirements.txt
+pytest-asyncio==1.4.0
